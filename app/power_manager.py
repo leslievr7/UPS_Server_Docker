@@ -15,6 +15,7 @@ from email.mime.text import MIMEText
 from email.utils import formataddr
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import reachability
 from battery_monitor import BatteryMonitor
 from power_source import (
     PowerSourceEvaluator,
@@ -329,6 +330,11 @@ class PowerManager:
         self.battery_gap_cycles = 0
         self.sentinel_online_count = 0
         self.sentinel_total_count = 0
+        # Per-address ping results, published for the Web GUI only. They are
+        # observations; no decision reads them.
+        self.sentinel_results = {}
+        self.host_results = {}
+        self.reachability_checked_at = None
         self.power_state = None
         self.power_state_timestamp = None
         self.power_state_was_simulation = False
@@ -580,12 +586,14 @@ class PowerManager:
             try:
                 result = subprocess.run([PING_CMD, "-c", "1", "-W", "1", ip],
                                       capture_output=True, timeout=3)
+                self.sentinel_results[ip] = result.returncode == 0
                 if result.returncode == 0:
                     log.info(f"  -> Sentinel host {ip} is online.")
                     online_hosts_count += 1
                 else:
                     log.info(f"  -> Sentinel host {ip} is offline.")
             except (subprocess.TimeoutExpired, OSError) as e:
+                self.sentinel_results[ip] = False
                 log.warning(f"  -> Failed to ping sentinel host {ip}: {e}")
 
         log.info(f"Found {online_hosts_count} online sentinel hosts.")
@@ -1637,6 +1645,13 @@ class PowerManager:
             'simulation': self.config.get('POWER_SIMULATION_MODE', 'false').lower() == 'true',
             'decision_mode': self.evaluator.mode,
             'hosts': host_verdicts or {},
+            # Who answered a ping on this pass, for the dashboard. Additive:
+            # nothing that reads this file is required to understand it.
+            'reachability': {
+                'checked_at': self.reachability_checked_at,
+                'sentinels': self.sentinel_results,
+                'hosts': self.host_results,
+            },
         }
 
         try:
@@ -1648,6 +1663,20 @@ class PowerManager:
             os.replace(temp_file, POWER_STATE_FILE)
         except (IOError, OSError, TypeError) as e:
             log.error(f"Cannot write power state file: {e}")
+
+    def _check_hosts_reachable(self):
+        """Ping every configured machine once, in parallel, for the dashboard.
+
+        Never raises and never feeds a decision: if it fails, the dashboard
+        simply falls back to pinging by itself.
+        """
+        ips = [p.get('IP') for p in self.wake_hosts.values() if p.get('IP')]
+        try:
+            self.host_results = reachability.check(ips, ping_cmd=PING_CMD)
+        except Exception as e:
+            log.warning(f"Could not check machine reachability for the dashboard: {e}")
+            self.host_results = {}
+        self.reachability_checked_at = reachability.utc_now()
 
     def _check_client_statuses(self):
         """Check client statuses and send notifications with improved error handling."""
@@ -1741,6 +1770,7 @@ class PowerManager:
 
             self._poll_battery()
             power_status = self._determine_power_status()
+            self._check_hosts_reachable()
             host_verdicts = self._evaluate_hosts(power_status)
             self._write_power_state(power_status, host_verdicts)
 

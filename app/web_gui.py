@@ -73,6 +73,27 @@ def get_battery_section():
     battery['updated_at'] = state.get('updated_at')
     return battery
 
+def get_reachability():
+    """Who answered a ping, as last recorded by the power manager.
+
+    Returns (sentinels, hosts), each {ip: bool}, or (None, None) when there is
+    no fresh snapshot - read_power_state() discards anything over 90 s old -
+    in which case callers ping by themselves, as the dashboard always used to.
+    """
+    state = read_power_state()
+    reach = (state or {}).get('reachability') or {}
+    if not reach.get('checked_at'):
+        return None, None
+    return reach.get('sentinels') or {}, reach.get('hosts') or {}
+
+
+def is_reachable(ip, recorded):
+    """Recorded ping result for ip, falling back to a live ping if unknown."""
+    if recorded is not None and ip in recorded:
+        return bool(recorded[ip])
+    return ping_host(ip)
+
+
 def get_client_statuses():
     """Reads the client status file."""
     if not os.path.exists(CLIENT_STATUS_FILE):
@@ -345,11 +366,13 @@ def index():
             if 'SHUTDOWN_DELAY_MINUTES' not in host
         }
         
-        # Get status information
+        # Get status information. Ping results come from the power manager's
+        # last pass; only addresses it has not checked are pinged here.
+        recorded_sentinels, recorded_hosts = get_reachability()
         sentinel_hosts_raw = pm_config.get('SENTINEL_HOSTS', '').split()
         sentinel_hosts = []
         sentinel_status = {}
-        
+
         # Clean up sentinel hosts (remove quotes and empty entries)
         for host in sentinel_hosts_raw:
             if host:
@@ -357,18 +380,18 @@ def index():
                 clean_host = host.strip().strip('"').strip("'")
                 if clean_host and validate_ip(clean_host):
                     sentinel_hosts.append(clean_host)
-                    sentinel_status[clean_host] = ping_host(clean_host)
+                    sentinel_status[clean_host] = is_reachable(clean_host, recorded_sentinels)
                 elif clean_host:
                     # Invalid IP but not empty - still add for display but mark as offline
                     sentinel_hosts.append(clean_host)
                     sentinel_status[clean_host] = False
-        
+
         # Get wake host status
         wake_host_status = {}
         for section, params in wake_hosts.items():
             ip = params.get('IP', '')
             if ip:
-                wake_host_status[section] = ping_host(ip)
+                wake_host_status[section] = is_reachable(ip, recorded_hosts)
         
         # Get client statuses
         client_statuses = get_client_statuses()
@@ -821,7 +844,8 @@ def get_status():
     """Get current status of all hosts"""
     try:
         pm_config, wake_hosts, _ = read_power_manager_config()
-        
+        recorded_sentinels, recorded_hosts = get_reachability()
+
         # Check sentinel hosts
         sentinel_hosts = pm_config.get('SENTINEL_HOSTS', '').split()
         sentinel_status = {}
@@ -829,14 +853,14 @@ def get_status():
             if host:
                 clean_host = host.strip().strip('"').strip("'")
                 if clean_host:
-                    sentinel_status[clean_host] = ping_host(clean_host)
-        
+                    sentinel_status[clean_host] = is_reachable(clean_host, recorded_sentinels)
+
         # Check wake hosts
         wake_host_status = {}
         for section, params in wake_hosts.items():
             ip = params.get('IP', '')
             if ip:
-                wake_host_status[section] = ping_host(ip)
+                wake_host_status[section] = is_reachable(ip, recorded_hosts)
         
         return jsonify({
             'sentinel_status': sentinel_status,
