@@ -279,6 +279,11 @@ code, kbd, .mono { font-family: var(--font-mono); font-size: 0.8125rem; }
   font-size: 0.8125rem;
 }
 .live-chip .status { font-weight: 500; }
+/* Basecoat tooltips are one line, cut off at 20rem; this one may wrap instead. */
+.live-chip[data-tooltip]::before {
+  white-space: normal; text-overflow: clip;
+  width: max-content; max-width: min(26rem, calc(100vw - 2rem));
+}
 
 /* ---------- info tooltip: hover, keyboard focus or tap ---------- */
 
