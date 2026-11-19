@@ -308,9 +308,9 @@ def build_banner(power_state, simulation, manager_state, machines, sentinels_onl
                         "the UPS itself seems cut. A tripped breaker is the usual cause."}
 
     if sentinels_total == 0:
-        text = "No sentinels are configured, so power cuts can't be detected. Add some in Settings."
+        text = "No sentinels are set up, so power cuts can't be detected. The server can find some for you."
         return {'tone': 'warning', 'icon': 'circle-alert', 'title': 'Power cuts are not being watched',
-                'text': text}
+                'text': text, 'action': 'find_sentinels'}
 
     if sentinels_online == sentinels_total:
         text = f"All {sentinels_total} sentinels are answering."

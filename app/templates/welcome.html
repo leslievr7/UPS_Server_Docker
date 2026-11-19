@@ -1,0 +1,22 @@
+{% extends "base.html" %}
+{% block title %}Watch for power cuts - UPS Server{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+  <div class="card auth-card onboard-card">
+    <header>
+      <p class="onboard-done small">{{ ui.icon('circle-check') }} Password created. You're signed in.</p>
+      <span class="auth-mark">{{ ui.icon('radio-tower') }}</span>
+      <h2>Watch for power cuts?</h2>
+      <p>The server spots a power cut when a few always-on devices around your home stop answering at the same time. It can look for good ones on your network.</p>
+    </header>
+    <footer class="onboard-actions">
+      <a class="btn" href="{{ url_for('sentinel_guide') }}">{{ ui.icon('search') }} Find devices</a>
+      <form method="post" action="{{ url_for('welcome_later') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn" data-variant="ghost">Later</button>
+      </form>
+    </footer>
+  </div>
+</div>
+{% endblock %}

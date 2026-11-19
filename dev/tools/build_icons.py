@@ -6,7 +6,8 @@ Lucide (https://lucide.dev, ISC licence) is shadcn's icon set. Keeping one small
 sprite in the repo means the UI needs no internet connection and no icon font.
 
 Usage (needs the lucide-static npm package unpacked somewhere):
-    npm pack lucide-static && tar -xzf lucide-static-*.tgz
+    npm pack lucide-static@1.73.0 && tar -xzf lucide-static-*.tgz
+(1.73.0 is the version the current sprite was built from.)
     python3 dev/tools/build_icons.py package/icons
 
 Templates reference an icon as <svg><use href="/static/icons/lucide.svg#name"/></svg>,
@@ -32,6 +33,9 @@ ICONS = [
     # actions
     'plus', 'pencil', 'trash-2', 'refresh-cw', 'x', 'chevron-down', 'copy', 'mail', 'bell',
     'eye', 'eye-off',
+    # device picker
+    'plug', 'lightbulb', 'tv', 'printer', 'smartphone', 'router', 'speaker', 'cctv',
+    'gamepad-2', 'search', 'check', 'arrow-left', 'arrow-right',
 ]
 
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

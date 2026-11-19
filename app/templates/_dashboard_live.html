@@ -63,9 +63,34 @@
     {% call ui.status_banner(b.title, b.text, b.tone, b.icon) %}
       <a class="btn" data-variant="outline" data-size="sm" href="{{ url_for('config') }}">Open settings</a>
     {% endcall %}
+  {% elif b.action == 'find_sentinels' %}
+    {% call ui.status_banner(b.title, b.text, b.tone, b.icon) %}
+      <a class="btn" data-variant="outline" data-size="sm" href="{{ url_for('sentinel_picker') }}">{{ ui.icon('search') }} Find devices</a>
+    {% endcall %}
   {% else %}
     {{ ui.status_banner(b.title, b.text, b.tone, b.icon) }}
   {% endif %}
+
+  {% for change in view.address_changes or [] %}
+  <div class="alert" data-variant="warning">
+    {{ ui.icon('triangle-alert') }}
+    <h2>{% if change.replaced %}Sentinel {{ change.ip }} is now a different device{% else %}Sentinel {{ change.ip }} has moved{% endif %}</h2>
+    <section class="address-change">
+      {% if change.new_ip %}
+      <span>The device you chose is now at <span class="mono">{{ change.new_ip }}</span>.</span>
+      <form method="post" action="{{ url_for('sentinel_move') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="ip" value="{{ change.ip }}">
+        <input type="hidden" name="new_ip" value="{{ change.new_ip }}">
+        <button type="submit" class="btn" data-size="sm">Watch {{ change.new_ip }} instead</button>
+      </form>
+      {% else %}
+      <span>Your router gave its address to something else, so it may not tell you about a power cut.</span>
+      <a class="btn" data-variant="outline" data-size="sm" href="{{ url_for('sentinel_picker') }}">{{ ui.icon('search') }} Find devices</a>
+      {% endif %}
+    </section>
+  </div>
+  {% endfor %}
 
   {% if view.observe_note %}
   <div class="alert" data-variant="info">{{ ui.icon('info') }}<h2>Battery rules are in observe mode</h2><section>{{ view.observe_note }}</section></div>
@@ -122,7 +147,7 @@
         {% endfor %}
       </div>
       {% else %}
-        <p class="small">No sentinels configured. <a href="{{ url_for('config') }}">Add some in Settings</a>.</p>
+        <p class="small">No sentinels yet. <a href="{{ url_for('sentinel_picker') }}">Find devices on your network</a>.</p>
       {% endif %}
     </section></div>
   </section>

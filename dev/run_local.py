@@ -23,6 +23,7 @@ command constants at dev/.sandbox/ after importing them.
 Usage:
   .venv/bin/python dev/run_local.py            # keep sandbox settings, fresh runtime
   .venv/bin/python dev/run_local.py --reset    # start again from dev/test_config.conf
+  .venv/bin/python dev/run_local.py --first-run  # brand-new install: no password, no sentinels
 """
 
 import argparse
@@ -36,6 +37,9 @@ import threading
 import time
 import urllib.error
 import urllib.request
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import fake_lan  # noqa: E402  (the pretend home network)
 from datetime import datetime, timezone
 
 DEV_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -71,8 +75,8 @@ CONFIG_PATH = os.path.join(PATHS['/etc/nut/'], 'power_manager.conf')
 SANDBOX_PASSWORD = 'sandbox-admin'  # test value, sandbox only
 
 
-def prepare_sandbox(reset):
-    if reset and os.path.isdir(SANDBOX):
+def prepare_sandbox(reset, first_run=False):
+    if (reset or first_run) and os.path.isdir(SANDBOX):
         shutil.rmtree(SANDBOX)
     for path in list(PATHS.values()) + [WORLD_DIR]:
         os.makedirs(path, exist_ok=True)
@@ -80,13 +84,16 @@ def prepare_sandbox(reset):
     if not os.path.exists(CONFIG_PATH):
         with open(os.path.join(DEV_DIR, 'test_config.conf')) as f:
             template = f.read()
+        template = template.replace('@SANDBOX@', SANDBOX)
+        if first_run:
+            template = '\n'.join(l for l in template.splitlines() if not l.startswith('SENTINEL_HOSTS=')) + '\n'
         with open(CONFIG_PATH, 'w') as f:
-            f.write(template.replace('@SANDBOX@', SANDBOX))
+            f.write(template)
 
     # Sign-in for the sandbox only. The test password is documented in
     # dev/README.md; delete this file to try the first-run setup page instead.
     auth_file = os.path.join(PATHS['/etc/nut/'], 'web_auth.json')
-    if not os.path.exists(auth_file):
+    if not os.path.exists(auth_file) and not first_run:
         import json
         import secrets
         from werkzeug.security import generate_password_hash
@@ -213,6 +220,8 @@ class World:
         with self.lock:
             ips = list(self.sentinels) if self.grid_on else []
             ips += [ip for ip, m in self.machines.items() if m['on']]
+        # The rest of the pretend home network (dev/fake_lan.py).
+        ips += [ip for ip in fake_lan.answering(self.grid_on) if ip not in ips]
         return ips
 
     # actions
@@ -596,9 +605,11 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     parser.add_argument('--reset', action='store_true',
                         help='start again from dev/test_config.conf')
+    parser.add_argument('--first-run', action='store_true',
+                        help='start as a brand-new install: no password, no sentinels')
     args = parser.parse_args()
 
-    prepare_sandbox(args.reset)
+    prepare_sandbox(args.reset, args.first_run)
     sys.path.insert(0, APP_DIR)
 
     import api
@@ -633,6 +644,11 @@ def main():
 
     global WORLD
     WORLD = World()
+
+    import network_scan
+    remap(network_scan)
+    fake_lan.install(network_scan, WORLD.reachable,
+                     lambda: {h['IP']: h.get('MAC', '').lower() for h in read_config()[1].values() if h.get('IP')})
     power_manager.Notifier._send_email = lambda self, subject, body: WORLD.record_email(subject, body)
     web_gui.send_email = lambda subject, body, config: (
         WORLD.record_email(subject, body) or True,

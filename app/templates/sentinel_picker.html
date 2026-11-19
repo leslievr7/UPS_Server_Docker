@@ -1,0 +1,247 @@
+{% extends "base.html" %}
+{% block title %}Choose sentinels - UPS Server{% endblock %}
+
+{% block content %}
+{% set from_args = {'from': 'settings'} if origin == 'settings' else {} %}
+<div class="picker-wrap">
+  <form method="post" action="{{ url_for('sentinel_save', **from_args) }}" class="card picker-card" id="picker">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+    <header>
+      <h2>Choose your sentinels</h2>
+      <p>Pick 2–3 always-on devices in different rooms.
+        <a href="{{ url_for('sentinel_guide', **from_args) }}">What makes a good sentinel?</a></p>
+    </header>
+
+    <section class="stack">
+      <div class="scan-status">
+        <div class="scan-line">
+          <span class="small" id="scan-text" aria-live="polite">Starting the scan…</span>
+          <span class="small muted mono" id="scan-count"></span>
+          <button type="button" class="btn" data-variant="outline" data-size="sm" id="scan-again" hidden>
+            {{ ui.icon('refresh-cw') }} Scan again</button>
+        </div>
+        <div class="scan-bar" id="scan-bar" role="progressbar" aria-label="Scan progress" aria-valuemin="0" aria-valuemax="100"><span></span></div>
+      </div>
+
+      <div>
+        <h3 class="pick-group">Good choices</h3>
+        <div class="pick-list" id="good">
+          <p class="pick-empty small muted" id="good-empty">Devices appear here as they're found.</p>
+        </div>
+      </div>
+
+      <div class="field">
+        <label for="manual-ip">Add an address by hand</label>
+        <div class="manual-add">
+          <input class="input mono" id="manual-ip" inputmode="decimal" autocomplete="off" placeholder="192.168.1.50"
+                 aria-describedby="manual-hint">
+          <button type="button" class="btn" data-variant="outline" id="manual-add">{{ ui.icon('plus') }} Add</button>
+        </div>
+        <p id="manual-hint">For a device the scan can't see, like one on another part of your network.</p>
+      </div>
+
+      <details class="pick-unsuitable" id="unsuitable-wrap" hidden>
+        <summary><span>Not suitable (<span id="unsuitable-count">0</span>)</span>{{ ui.icon('chevron-down') }}</summary>
+        <div class="pick-list" id="unsuitable"></div>
+      </details>
+    </section>
+
+    <footer class="onboard-actions">
+      <button type="submit" class="btn" id="save" disabled>Save sentinels</button>
+      {% if first_run %}
+      <button type="submit" class="btn" data-variant="ghost" form="later">Skip for now</button>
+      {% else %}
+      <a class="btn" data-variant="ghost" href="{{ back }}">Cancel</a>
+      {% endif %}
+    </footer>
+  </form>
+  {% if first_run %}
+  <form method="post" action="{{ url_for('welcome_later') }}" id="later">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+  </form>
+  {% endif %}
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+  var SPRITE = '{{ url_for("static", filename="icons/lucide.svg") }}';
+  var START = '{{ url_for("sentinel_scan_start") }}';
+  var STATUS = '{{ url_for("sentinel_scan_status") }}';
+  var csrf = document.querySelector('meta[name="csrf-token"]').content;
+  var $ = function (id) { return document.getElementById(id); };
+  var good = $('good'), bad = $('unsuitable'), save = $('save');
+  var selected = {};      // ip -> true, what the user has ticked
+  var seen = {};          // ip -> true, rows whose initial tick has been decided
+  var manual = [];        // entries added by hand
+  var timer = null;
+
+  function icon(name) {
+    var svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+    svg.setAttribute('class', 'icon'); svg.setAttribute('aria-hidden', 'true');
+    var use = document.createElementNS('http://www.w3.org/2000/svg', 'use');
+    use.setAttribute('href', SPRITE + '#' + name);
+    svg.appendChild(use);
+    return svg;
+  }
+  function el(tag, cls, text) {
+    var e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text) e.textContent = text;
+    return e;
+  }
+  function badge(text, variant) { var b = el('span', 'badge', text); b.dataset.variant = variant; return b; }
+
+  function row(entry, pickable) {
+    var r = el(pickable ? 'label' : 'div', 'list-row pick-row');
+    r.dataset.ip = entry.ip;
+    if (pickable) {
+      var box = el('input', 'input');
+      box.type = 'checkbox'; box.name = 'ip'; box.value = entry.ip;
+      box.checked = !!selected[entry.ip];
+      box.addEventListener('change', function () { selected[entry.ip] = box.checked; count(); });
+      r.appendChild(box);
+    }
+    var ic = el('span', 'pick-icon'); ic.appendChild(icon(entry.icon)); r.appendChild(ic);
+    var text = el('span', 'pick-text');
+    text.appendChild(el('span', 'pick-title', entry.title));
+    var meta = el('span', 'pick-meta');
+    meta.appendChild(el('span', 'mono', entry.ip));
+    if (entry.mac) meta.appendChild(el('span', 'mono pick-mac', entry.mac));
+    if (entry.detail) meta.appendChild(el('span', '', entry.detail));
+    text.appendChild(meta);
+    r.appendChild(text);
+    var tags = el('span', 'pick-tags');
+    if (entry.current) tags.appendChild(badge('Watching', 'info'));
+    if (entry.missing) tags.appendChild(badge('Not answering right now', 'warning'));
+    if (entry.reason) tags.appendChild(badge(entry.reason, pickable ? 'warning' : 'muted'));
+    if (entry.manual) tags.appendChild(badge('Added by hand', 'muted'));
+    r.appendChild(tags);
+    r.dataset.sig = JSON.stringify(entry);
+    return r;
+  }
+
+  // Update a list in place, so ticking a box mid-scan isn't undone by a redraw.
+  function sync(list, entries, pickable) {
+    var existing = {};
+    Array.prototype.forEach.call(list.querySelectorAll('.pick-row'), function (r) { existing[r.dataset.ip] = r; });
+    var keep = {};
+    entries.forEach(function (entry, i) {
+      keep[entry.ip] = true;
+      var r = existing[entry.ip];
+      var sig = JSON.stringify(entry);
+      if (!r || r.dataset.sig !== sig) {
+        var fresh = row(entry, pickable);
+        if (r) list.replaceChild(fresh, r); else list.appendChild(fresh);
+        r = fresh;
+      }
+      var at = list.querySelectorAll('.pick-row')[i];
+      if (at !== r) list.insertBefore(r, at);
+    });
+    Object.keys(existing).forEach(function (ip) { if (!keep[ip]) existing[ip].remove(); });
+  }
+
+  function count() {
+    var n = good.querySelectorAll('input[name="ip"]:checked').length;
+    save.disabled = n === 0;
+    save.textContent = n === 0 ? 'Save sentinels' : 'Save ' + n + ' sentinel' + (n === 1 ? '' : 's');
+  }
+
+  var last = { good: [], unsuitable: [] };
+  function render() {
+    last.good.forEach(function (e) {
+      if (!seen[e.ip]) { seen[e.ip] = true; if (e.current) selected[e.ip] = true; }
+    });
+    var shown = {};
+    last.good.forEach(function (e) { shown[e.ip] = true; });
+    var entries = last.good.concat(manual.filter(function (m) { return !shown[m.ip]; }));
+    sync(good, entries, true);
+    $('good-empty').hidden = entries.length > 0;
+    sync(bad, last.unsuitable, false);
+    $('unsuitable-count').textContent = last.unsuitable.length;
+    $('unsuitable-wrap').hidden = last.unsuitable.length === 0;
+    count();
+  }
+
+  function progress(s) {
+    var text = $('scan-text'), countEl = $('scan-count'), bar = $('scan-bar');
+    var pct = s.total ? Math.round(100 * s.checked / s.total) : 0;
+    bar.dataset.state = s.status === 'running' && s.phase !== 'first' ? 'busy' : s.status;
+    bar.firstElementChild.style.width = (s.status === 'done' ? 100 : pct) + '%';
+    bar.setAttribute('aria-valuenow', s.status === 'done' ? 100 : pct);
+    $('scan-again').hidden = !(s.status === 'done' || s.status === 'failed');
+    countEl.textContent = '';
+    var phaseText = {
+      first: 'Checking every address on your network…',
+      second: 'Taking a second look at quiet addresses…',
+      names: 'Looking up names…'
+    };
+    if (s.status === 'running') {
+      text.textContent = phaseText[s.phase] || 'Scanning…';
+      if (s.phase === 'first') countEl.textContent = s.checked + ' of ' + s.total;
+    } else if (s.status === 'done') {
+      text.textContent = 'Found ' + s.found + ' device' + (s.found === 1 ? '' : 's') + '.';
+    } else if (s.status === 'failed') {
+      text.textContent = "The scan didn't finish. You can still add addresses by hand.";
+    } else {
+      text.textContent = 'Starting the scan…';
+    }
+  }
+
+  function poll() {
+    clearTimeout(timer);
+    fetch(STATUS, { headers: { 'X-Requested-With': 'fetch' } })
+      .then(function (r) { if (r.status === 401) { location.reload(); throw 0; } return r.json(); })
+      .then(function (s) {
+        last = { good: s.good, unsuitable: s.unsuitable };
+        progress(s);
+        render();
+        if (s.status === 'running' || s.status === 'none') timer = setTimeout(poll, 500);
+      })
+      .catch(function () { timer = setTimeout(poll, 2000); });
+  }
+
+  function start(again) {
+    fetch(START + (again ? '?again=1' : ''), {
+      method: 'POST', headers: { 'X-CSRF-Token': csrf, 'X-Requested-With': 'fetch' }
+    }).then(poll, poll);
+  }
+
+  $('scan-again').addEventListener('click', function () { start(true); });
+
+  var IPV4 = /^(25[0-5]|2[0-4]\d|1?\d?\d)(\.(25[0-5]|2[0-4]\d|1?\d?\d)){3}$/;
+  function addManual() {
+    var input = $('manual-ip'), ip = input.value.trim();
+    var field = input.closest('.field');
+    var hint = $('manual-hint');
+    if (!IPV4.test(ip)) {
+      field.dataset.invalid = 'true';
+      input.setAttribute('aria-invalid', 'true');
+      hint.setAttribute('role', 'alert');
+      hint.textContent = "That doesn't look like an IP address. It should be four numbers with dots, like 192.168.1.50.";
+      return;
+    }
+    delete field.dataset.invalid;
+    input.removeAttribute('aria-invalid');
+    hint.removeAttribute('role');
+    hint.textContent = "For a device the scan can't see, like one on another part of your network.";
+    selected[ip] = true; seen[ip] = true;
+    var known = last.good.some(function (e) { return e.ip === ip; }) ||
+                manual.some(function (e) { return e.ip === ip; });
+    if (!known) manual.push({ ip: ip, mac: '', title: 'Added by hand', detail: '', icon: 'circle-dot',
+                              current: false, missing: false, reason: null, manual: true });
+    var box = good.querySelector('input[value="' + ip + '"]');
+    if (box) box.checked = true;
+    input.value = '';
+    render();
+  }
+  $('manual-add').addEventListener('click', addManual);
+  $('manual-ip').addEventListener('keydown', function (e) {
+    if (e.key === 'Enter') { e.preventDefault(); addManual(); }
+  });
+
+  start(false);
+})();
+</script>
+{% endblock %}

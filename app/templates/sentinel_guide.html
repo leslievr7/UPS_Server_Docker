@@ -1,0 +1,68 @@
+{% extends "base.html" %}
+{% block title %}What makes a good sentinel - UPS Server{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+  <div class="card auth-card onboard-card">
+    <header>
+      <h2>What makes a good sentinel</h2>
+      <p>Sentinels are how the server notices a power cut.</p>
+    </header>
+    <section>
+      <ul class="rule-list">
+        <li>
+          <span class="setting-icon">{{ ui.icon('plug') }}</span>
+          <div><h3>Plugged into the wall, not the UPS</h3>
+            <p>So it goes quiet when the power does.</p></div>
+        </li>
+        <li>
+          <span class="setting-icon">{{ ui.icon('power') }}</span>
+          <div><h3>Always on</h3>
+            <p>Smart plugs, TV boxes and speakers work well. Phones and laptops come and go.</p></div>
+        </li>
+        <li>
+          <span class="setting-icon">{{ ui.icon('radio-tower') }}</span>
+          <div><h3>Two or three, in different rooms</h3>
+            <p>One quiet device might just be unplugged. All of them at once means a power cut.</p></div>
+        </li>
+      </ul>
+    </section>
+    <footer class="onboard-actions">
+      <a class="btn" href="{{ url_for('sentinel_picker', guide='skip', **({'from': 'settings'} if origin == 'settings' else {})) }}">
+        Continue {{ ui.icon('arrow-right') }}</a>
+      {% if first_run %}
+      <form method="post" action="{{ url_for('welcome_later') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <button type="submit" class="btn" data-variant="ghost">Skip for now</button>
+      </form>
+      {% else %}
+      <a class="btn" data-variant="ghost" href="{{ url_for('config') + '#general' if origin == 'settings' else url_for('index') }}">Cancel</a>
+      {% endif %}
+      <p class="small muted onboard-scan" id="scan-note" aria-live="polite">Looking for devices in the background…</p>
+    </footer>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+  // Start the scan now, so it's mostly done by the time the picker opens.
+  (function () {
+    var csrf = document.querySelector('meta[name="csrf-token"]').content;
+    var note = document.getElementById('scan-note');
+    var headers = { 'X-CSRF-Token': csrf, 'X-Requested-With': 'fetch' };
+    fetch('{{ url_for("sentinel_scan_start") }}', { method: 'POST', headers: headers })
+      .then(poll).catch(function () { note.textContent = ''; });
+    function poll() {
+      fetch('{{ url_for("sentinel_scan_status") }}', { headers: { 'X-Requested-With': 'fetch' } })
+        .then(function (r) { return r.json(); })
+        .then(function (s) {
+          if (s.status === 'done') { note.textContent = 'Found ' + s.found + ' devices.'; return; }
+          if (s.status === 'failed') { note.textContent = ''; return; }
+          if (s.found) note.textContent = 'Looking for devices… ' + s.found + ' found so far.';
+          setTimeout(poll, 1000);
+        }).catch(function () {});
+    }
+  })();
+</script>
+{% endblock %}

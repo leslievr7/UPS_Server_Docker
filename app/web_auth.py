@@ -50,6 +50,8 @@ MAX_LOCKOUT_SECONDS = 15 * 60
 PUBLIC_ENDPOINTS = {'login', 'setup', 'static', 'version_endpoint'}
 # Extra public endpoint prefixes, e.g. the sandbox's own control panel.
 PUBLIC_PREFIXES = []
+# Where to go after creating the password. Set by web_onboarding.
+after_setup = None
 
 _lock = threading.Lock()
 _cache = {'mtime': None, 'data': {}}
@@ -95,6 +97,22 @@ def _load():
                 return _cache['data']
             _cache['mtime'] = mtime
         return _cache['data']
+
+
+def get_flag(name):
+    """A small remembered fact about this install (e.g. onboarding finished)."""
+    return bool(_load().get('flags', {}).get(name))
+
+
+def set_flag(name, value=True):
+    data = dict(_load())
+    flags = dict(data.get('flags', {}))
+    if bool(flags.get(name)) == bool(value):
+        return
+    flags[name] = bool(value)
+    data['flags'] = flags
+    _write(data)
+    _cache['mtime'] = None
 
 
 def has_password():
@@ -246,6 +264,8 @@ def init_app(app):
                 session.clear()
                 session.permanent = True
                 session['signed_in'] = True
+                if after_setup:
+                    return redirect(after_setup())
                 flash('Password created. You are signed in on this device.', 'success')
                 return redirect(url_for('index'))
         return render_template('setup.html', error=error, min_length=MIN_PASSWORD_LENGTH)

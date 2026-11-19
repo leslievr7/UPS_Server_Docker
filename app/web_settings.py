@@ -16,6 +16,9 @@ the saved one.
 
 from flask import flash, redirect, request, url_for
 
+import network_scan
+import web_onboarding
+
 GENERAL_INTS = (
     # form field, config key, lowest, highest, plain name
     ('wol_delay_minutes', 'WOL_DELAY_MINUTES', 1, 60, 'Wake-up delay'),
@@ -79,7 +82,16 @@ def register(app, gui):
         bad = [ip for ip in sentinels if not gui.validate_ip(ip)]
         if bad:
             return back('general', f"{', '.join(bad)} isn't a valid IP address. Nothing was saved.", 'error')
+        current = gui.read_power_manager_config()[0]
+        quiet = web_onboarding.silent_sentinels(gui, current, sentinels) if sentinels else None
+        if quiet is not None and len(quiet) == len(sentinels):
+            return back('general', web_onboarding.NONE_ANSWER, 'error')
         updates['SENTINEL_HOSTS'] = ' '.join(sentinels)
+        # Forget the remembered device of any sentinel that was removed.
+        macs = network_scan.parse_sentinel_macs(current.get('SENTINEL_MACS'))
+        if macs:
+            kept = {ip: mac for ip, mac in macs.items() if ip in sentinels}
+            updates['SENTINEL_MACS'] = network_scan.format_sentinel_macs(kept) or None
 
         for field, key, low, high, name in GENERAL_INTS:
             raw = request.form.get(field, '').strip()
@@ -92,6 +104,8 @@ def register(app, gui):
             return back('general', "The broadcast address isn't a valid IP address. Nothing was saved.", 'error')
         updates['DEFAULT_BROADCAST_IP'] = broadcast
         updates['DEBUG_MODE'] = _switch('debug_mode')
+        if quiet:
+            flash(web_onboarding.quiet_warning(quiet), 'warning')
         return save(updates, 'general', 'General settings saved.')
 
     @app.route('/settings/test_mode', methods=['POST'])

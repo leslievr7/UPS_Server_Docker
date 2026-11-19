@@ -32,7 +32,6 @@
   </div>
 </dialog>
 
-<div id="toaster" class="toaster"></div>
 {% endblock %}
 
 {% block extra_scripts %}
@@ -112,8 +111,7 @@
   }
 
   function toast(category, title, description) {
-    var t = document.getElementById('toaster');
-    if (t && t.toast) t.toast({ category: category, title: title, description: description });
+    if (window.uiToast) window.uiToast(category, title, description);
   }
 
   /* Info tooltips: hover or focus shows them through CSS; a tap pins one open. */

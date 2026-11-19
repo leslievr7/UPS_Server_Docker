@@ -27,12 +27,20 @@
   {% set active = request.endpoint or '' %}
   <header class="app-header">
     <div class="container">
+      {# During first-run setup the header offers no way out of the flow. #}
+      {% if focus %}
+      <span class="brand">
+        <span class="brand-mark">{{ ui.icon('zap') }}</span>
+        <span class="brand-name">UPS Server</span>
+      </span>
+      {% else %}
       <a class="brand" href="{{ url_for('index') }}">
         <span class="brand-mark">{{ ui.icon('zap') }}</span>
         <span class="brand-name">UPS Server</span>
       </a>
+      {% endif %}
 
-      {% if signed_in %}
+      {% if signed_in and not focus %}
       <nav class="app-nav" aria-label="Main">
         <a href="{{ url_for('index') }}" {% if active == 'index' %}aria-current="page"{% endif %}>
           {{ ui.icon('layout-dashboard') }}<span>Dashboard</span>
@@ -73,23 +81,6 @@
 
   <main class="app-main">
     <div class="container">
-      {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-          <div class="flash-stack">
-            {% for category, message in messages %}
-              {% set tone = {'error': 'destructive', 'danger': 'destructive', 'success': 'success',
-                             'warning': 'warning', 'info': 'info'}.get(category, 'info') %}
-              {% set glyph = {'destructive': 'circle-alert', 'success': 'circle-check',
-                              'warning': 'triangle-alert'}.get(tone, 'info') %}
-              <div class="alert" data-variant="{{ tone }}" role="{{ 'alert' if tone == 'destructive' else 'status' }}">
-                {{ ui.icon(glyph) }}
-                <h2>{{ message }}</h2>
-              </div>
-            {% endfor %}
-          </div>
-        {% endif %}
-      {% endwith %}
-
       {% block content %}{% endblock %}
     </div>
   </main>
@@ -101,10 +92,69 @@
     </div>
   </footer>
 
+  {# Messages after an action appear as toasts, just below the header on the right,
+     so they never cover the theme or log-out buttons. Successes fade after 5 s
+     (paused while hovered or focused); warnings and errors stay until closed. #}
+  {% with messages = get_flashed_messages(with_categories=true) %}
+  <div id="toaster" class="toaster" data-align="end">
+    {% for category, message in messages %}
+      {% set kind = {'error': 'error', 'danger': 'error', 'success': 'success',
+                     'warning': 'warning'}.get(category, 'info') %}
+      {% set glyph = {'error': 'circle-x', 'success': 'circle-check', 'warning': 'triangle-alert'}.get(kind, 'info') %}
+      {% set parts = message.split('. ', 1) %}
+      <div class="toast" role="{{ 'alert' if kind in ('error', 'warning') else 'status' }}" aria-atomic="true"
+           data-category="{{ kind }}" data-duration="{{ -1 if kind in ('error', 'warning') else 5000 }}">
+        <div class="toast-content">
+          {{ ui.icon(glyph) }}
+          <section>
+            <h2>{{ parts[0] }}{% if parts | length > 1 %}.{% endif %}</h2>
+            {% if parts | length > 1 %}<p>{{ parts[1] }}</p>{% endif %}
+          </section>
+        </div>
+      </div>
+    {% endfor %}
+  </div>
+  {% endwith %}
+
   <script src="{{ url_for('static', filename='vendor/basecoat/basecoat.min.js') }}" defer></script>
   <script src="{{ url_for('static', filename='vendor/basecoat/dropdown-menu.min.js') }}" defer></script>
   <script src="{{ url_for('static', filename='vendor/basecoat/tabs.min.js') }}" defer></script>
   <script src="{{ url_for('static', filename='vendor/basecoat/toast.min.js') }}" defer></script>
+  <script>
+    /* Toasts: one way to show a message from any page script, plus a close
+       button on every toast and a pause while the keyboard is on one. */
+    (function () {
+      var toaster = document.getElementById('toaster');
+      var sprite = '{{ url_for("static", filename="icons/lucide.svg") }}';
+      window.uiToast = function (category, title, description) {
+        var sticky = category === 'error' || category === 'warning';
+        if (toaster && toaster.toast) {
+          return toaster.toast({ category: category, title: title, description: description,
+                                 duration: sticky ? -1 : 5000 });
+        }
+      };
+      function addClose(toast) {
+        if (toast.querySelector('.toast-close')) return;
+        var b = document.createElement('button');
+        b.type = 'button'; b.className = 'toast-close'; b.setAttribute('aria-label', 'Dismiss');
+        b.innerHTML = '<svg class="icon" aria-hidden="true"><use href="' + sprite + '#x"></use></svg>';
+        b.addEventListener('click', function () {
+          if (toast.close) toast.close(); else toast.remove();
+        });
+        (toast.querySelector('.toast-content') || toast).appendChild(b);
+      }
+      toaster.querySelectorAll('.toast').forEach(addClose);
+      new MutationObserver(function (changes) {
+        changes.forEach(function (c) {
+          c.addedNodes.forEach(function (n) { if (n.classList && n.classList.contains('toast')) addClose(n); });
+        });
+      }).observe(toaster, { childList: true });
+      toaster.addEventListener('focusin', function () { toaster.dispatchEvent(new Event('mouseenter')); });
+      toaster.addEventListener('focusout', function (e) {
+        if (!toaster.contains(e.relatedTarget)) toaster.dispatchEvent(new Event('mouseleave'));
+      });
+    })();
+  </script>
   <script src="{{ url_for('static', filename='js/app.js') }}"></script>
   {% block extra_scripts %}{% endblock %}
 </body>

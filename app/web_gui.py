@@ -28,7 +28,9 @@ from dashboard_view import build_dashboard
 import config_store
 import reachability
 import web_auth
+import web_onboarding
 import web_settings
+import network_scan
 
 # Import version information
 try:
@@ -99,8 +101,14 @@ def collect_dashboard():
             if ip in host_ips:
                 hosts[ip] = up
 
-    return build_dashboard(pm_config, wake_hosts, schedules, power_state,
+    view = build_dashboard(pm_config, wake_hosts, schedules, power_state,
                            get_client_statuses(), read_manager_state(), sentinels, hosts)
+    try:
+        view['address_changes'] = network_scan.address_changes(pm_config)
+    except Exception as e:  # never let this extra check break the dashboard
+        app.logger.warning(f"Could not check sentinel addresses: {e}")
+        view['address_changes'] = []
+    return view
 
 def get_battery_section():
     """Battery data from the power manager snapshot, shaped for the dashboard.
@@ -368,6 +376,7 @@ def version_endpoint():
 
 # Settings saves, one per tab, live in web_settings.py.
 web_settings.register(app, sys.modules[__name__])
+web_onboarding.register(app, sys.modules[__name__])
 
 @app.route('/test_smtp', methods=['POST'])
 def test_smtp():

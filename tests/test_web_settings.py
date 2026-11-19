@@ -61,6 +61,7 @@ def env(tmp_path, monkeypatch):
     monkeypatch.setattr(web_auth, '_failures', {})
     sent = []
     monkeypatch.setattr(web_gui, 'send_wol', lambda mac, ip: sent.append((mac, ip)) or True)
+    monkeypatch.setattr(web_gui.reachability, 'check', lambda ips, **kw: {ip: True for ip in ips})
     web_gui.app.config['TESTING'] = True
     return {'conf': conf, 'client': web_gui.app.test_client(), 'sent': sent}
 

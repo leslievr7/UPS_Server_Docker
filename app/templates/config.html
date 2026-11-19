@@ -72,8 +72,9 @@
               <label for="sentinel_hosts">Sentinel IP addresses</label>
               <textarea class="textarea mono" id="sentinel_hosts" name="sentinel_hosts" rows="4"
                         placeholder="192.168.1.11&#10;192.168.1.12">{{ c.get('SENTINEL_HOSTS', '').split() | join('\n') }}</textarea>
-              <p>One per line. Pick devices that are always on, like a router's access point or a smart plug.</p>
+              <p>One per line. Pick devices that are always on and plugged into the wall, like a smart plug or a TV box.</p>
             </div>
+            <div><a class="btn" data-variant="outline" data-size="sm" href="{{ url_for('sentinel_picker', **{'from': 'settings'}) }}">{{ ui.icon('search') }} Find devices on my network</a></div>
           </section>
         </div>
 
