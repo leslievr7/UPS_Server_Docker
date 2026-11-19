@@ -34,7 +34,9 @@
 
   --success: oklch(0.527 0.154 150.069);
   --success-foreground: oklch(0.985 0 0);
-  --warning: oklch(0.666 0.179 58.318);
+  /* Yellow-amber rather than orange, so "needs attention" never looks like
+     the orange accent used for buttons and the logo. */
+  --warning: oklch(0.6 0.13 78);
   --warning-foreground: oklch(0.985 0 0);
   --info: oklch(0.546 0.245 262.881);
   --info-foreground: oklch(0.985 0 0);
@@ -43,7 +45,7 @@
 .dark {
   --success: oklch(0.723 0.219 149.579);
   --success-foreground: oklch(0.145 0 0);
-  --warning: oklch(0.769 0.188 70.08);
+  --warning: oklch(0.83 0.16 86);
   --warning-foreground: oklch(0.145 0 0);
   --info: oklch(0.707 0.165 254.624);
   --info-foreground: oklch(0.145 0 0);
@@ -59,3 +61,78 @@
 }
 
 /* ---- Paste a tweakcn / shadcn theme below this line ---- */
+
+/* Chosen at Checkpoint A (2026-11-19): a tweakcn theme with an orange accent and
+   slate-tinted neutrals, corner radius 0.875rem, on Basecoat's Vega style.
+   Shadow and font entries from the export were dropped: Basecoat does not use
+   the shadow variables, and the fonts are defined at the top of this file. */
+:root {
+  --background: oklch(0.9906 0.0017 247.8388);
+  --foreground: oklch(0.3211 0 0);
+  --card: oklch(1.0000 0 0);
+  --card-foreground: oklch(0.3211 0 0);
+  --popover: oklch(1.0000 0 0);
+  --popover-foreground: oklch(0.3211 0 0);
+  --primary: oklch(0.6348 0.1747 37.9003);
+  --primary-foreground: oklch(1.0000 0 0);
+  --secondary: oklch(0.9588 0.0086 247.9151);
+  --secondary-foreground: oklch(0.4461 0.0263 256.8018);
+  --muted: oklch(0.9846 0.0017 247.8389);
+  --muted-foreground: oklch(0.5510 0.0234 264.3637);
+  --accent: oklch(0.9392 0.0159 233.0272);
+  --accent-foreground: oklch(0.4430 0.1100 240.7900);
+  --destructive: oklch(0.6368 0.2078 25.3313);
+  --destructive-foreground: oklch(1.0000 0 0);
+  --border: oklch(0.9391 0.0035 247.8598);
+  --input: oklch(0.9700 0.0029 264.5420);
+  --ring: oklch(0.6348 0.1747 37.9003);
+  --chart-1: oklch(0.7156 0.0605 248.6845);
+  --chart-2: oklch(0.7875 0.0917 35.9616);
+  --chart-3: oklch(0.5778 0.0759 254.1573);
+  --chart-4: oklch(0.5016 0.0849 259.4902);
+  --chart-5: oklch(0.4241 0.0952 264.0306);
+  --sidebar: oklch(0.9906 0.0017 247.8388);
+  --sidebar-foreground: oklch(0.3211 0 0);
+  --sidebar-primary: oklch(0.6397 0.1720 36.4421);
+  --sidebar-primary-foreground: oklch(1.0000 0 0);
+  --sidebar-accent: oklch(0.9352 0.0162 245.0911);
+  --sidebar-accent-foreground: oklch(0.3791 0.1378 265.5222);
+  --sidebar-border: oklch(0.9391 0.0035 247.8598);
+  --sidebar-ring: oklch(0.6397 0.1720 36.4421);
+  --radius: 0.875rem;
+}
+
+.dark {
+  --background: oklch(0.2258 0.0234 262.3453);
+  --foreground: oklch(0.9219 0 0);
+  --card: oklch(0.2737 0.0253 268.3214);
+  --card-foreground: oklch(0.9219 0 0);
+  --popover: oklch(0.2900 0.0249 268.3986);
+  --popover-foreground: oklch(0.9219 0 0);
+  --primary: oklch(0.6397 0.1720 36.4421);
+  --primary-foreground: oklch(1.0000 0 0);
+  --secondary: oklch(0.3095 0.0266 266.7132);
+  --secondary-foreground: oklch(0.9219 0 0);
+  --muted: oklch(0.3095 0.0266 266.7132);
+  --muted-foreground: oklch(0.7155 0 0);
+  --accent: oklch(0.3380 0.0589 267.5867);
+  --accent-foreground: oklch(0.8823 0.0571 254.1284);
+  --destructive: oklch(0.6368 0.2078 25.3313);
+  --destructive-foreground: oklch(1.0000 0 0);
+  --border: oklch(0.3843 0.0301 269.7337);
+  --input: oklch(0.3843 0.0301 269.7337);
+  --ring: oklch(0.6397 0.1720 36.4421);
+  --chart-1: oklch(0.7156 0.0605 248.6845);
+  --chart-2: oklch(0.7693 0.0876 34.1875);
+  --chart-3: oklch(0.5778 0.0759 254.1573);
+  --chart-4: oklch(0.5016 0.0849 259.4902);
+  --chart-5: oklch(0.4241 0.0952 264.0306);
+  --sidebar: oklch(0.3100 0.0283 267.7408);
+  --sidebar-foreground: oklch(0.9219 0 0);
+  --sidebar-primary: oklch(0.6397 0.1720 36.4421);
+  --sidebar-primary-foreground: oklch(1.0000 0 0);
+  --sidebar-accent: oklch(0.3380 0.0589 267.5867);
+  --sidebar-accent-foreground: oklch(0.8823 0.0571 254.1284);
+  --sidebar-border: oklch(0.3843 0.0301 269.7337);
+  --sidebar-ring: oklch(0.6397 0.1720 36.4421);
+}

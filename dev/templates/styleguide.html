@@ -400,7 +400,9 @@
   var overrides = document.getElementById('sg-overrides');
   var link = document.getElementById('basecoat-css');
   var defaultHref = link.getAttribute('href');
-  var state = { style: 'vega', accent: 'neutral', radius: '0.625', pasted: '' };
+  // Start from whatever radius the app's theme.css sets, so the slider shows reality.
+  var baseRadius = (parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--radius')) || 0.625).toString();
+  var state = { style: 'vega', accent: 'neutral', radius: baseRadius, pasted: '' };
   try { Object.assign(state, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
 
   function render() {
@@ -412,7 +414,7 @@
       css += ':root{--primary:' + a.l[0] + ';--primary-foreground:' + a.l[1] + ';--ring:' + a.l[0] + ';}';
       css += '.dark{--primary:' + a.d[0] + ';--primary-foreground:' + a.d[1] + ';--ring:' + a.d[0] + ';}';
     }
-    css += ':root{--radius:' + state.radius + 'rem;}';
+    if (state.radius !== baseRadius) css += ':root{--radius:' + state.radius + 'rem;}';
     overrides.textContent = (state.pasted || '') + '\n' + css;
     try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
   }
@@ -421,7 +423,7 @@
   accent.onchange = function () { state.accent = accent.value; render(); };
   radius.oninput = function () { state.radius = radius.value; render(); };
   document.getElementById('sg-reset').onclick = function () {
-    state = { style: 'vega', accent: 'neutral', radius: '0.625', pasted: '' }; render();
+    state = { style: 'vega', accent: 'neutral', radius: baseRadius, pasted: '' }; render();
   };
   document.getElementById('sg-paste-apply').onclick = function () {
     state.pasted = document.getElementById('sg-paste').value;
