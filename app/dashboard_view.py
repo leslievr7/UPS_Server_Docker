@@ -78,8 +78,10 @@ def section_number(section):
 # --- machines ----------------------------------------------------------------
 
 AGENT_STATUSES = ('online', 'shutdown_pending', 'shutting_down')
-ATTENTION_LABELS = ('No agent', 'Status stale', 'Offline', 'Did not wake up',
-                    'Wake-on-LAN failed', 'Wake-on-LAN error')
+# Logic keys off these internal names, never the visible label, so two states
+# can share a word ("Offline") without being confused.
+ATTENTION_KEYS = ('no_agent', 'stale', 'offline', 'wake_failed')
+OFF_KEYS = ('off_expected', 'offline')
 
 
 def machine_status(kind, reachable, record, age, stale_seconds, power_cut):
@@ -95,59 +97,63 @@ def machine_status(kind, reachable, record, age, stale_seconds, power_cut):
     """
     status = (record or {}).get('status')
 
-    def result(label, tone, icon, note=None, pulse=False):
-        return {'label': label, 'tone': tone, 'icon': icon, 'note': note, 'pulse': pulse}
+    def result(key, label, tone, icon, note=None, pulse=False):
+        return {'key': key, 'label': label, 'tone': tone, 'icon': icon, 'note': note, 'pulse': pulse}
 
     if status == 'shutdown_pending' and age is not None and age < stale_seconds:
-        return result('Shutting down', 'warning', 'timer', pulse=True)
+        return result('countdown', 'Shutting down', 'warning', 'timer', pulse=True)
     if status == 'shutting_down':
         if age is not None and age < 180 and reachable:
-            return result('Shutting down', 'danger', 'power-off', pulse=True)
+            return result('stopping', 'Shutting down', 'danger', 'power-off', pulse=True)
         if power_cut and not reachable:
-            return result('Off — power cut', 'muted', 'power-off',
-                          'Shut down safely by its UPS script.')
+            return result('off_expected', 'Offline', 'muted', 'power-off',
+                          'Turned off safely for the power cut.')
         if not reachable:
-            return result('Off', 'muted', 'power-off')
+            return result('off_expected', 'Offline', 'muted', 'power-off',
+                          'Turned off by its UPS script.')
     if status == 'wol_sent':
         if reachable:
-            return result('Booting', 'info', 'loader-circle', pulse=True)
-        return result('Wake-on-LAN sent', 'info', 'send', 'Waiting for it to start up.')
+            return result('booting', 'Booting', 'info', 'loader-circle', pulse=True)
+        return result('wol_sent', 'Wake-on-LAN sent', 'info', 'send', 'Waiting for it to start up.')
     if status == 'wol_no_response':
         if reachable:
-            return result('Booting', 'info', 'loader-circle', pulse=True)
-        return result('Did not wake up', 'danger', 'triangle-alert',
+            return result('booting', 'Booting', 'info', 'loader-circle', pulse=True)
+        return result('wake_failed', 'Did not wake up', 'danger', 'triangle-alert',
                       "Wake-on-LAN was sent but it never answered. Check its MAC address "
                       "and the network card's wake settings.")
     if status == 'wol_deferred' and not reachable:
-        return result('Waiting for charge', 'warning', 'battery-low',
+        return result('wol_deferred', 'Waiting for charge', 'warning', 'battery-low',
                       'It will be woken once the battery has recharged enough.')
     if status == 'wol_failed' and not reachable:
-        return result('Wake-on-LAN failed', 'danger', 'circle-x',
+        return result('wake_failed', 'Wake-on-LAN failed', 'danger', 'circle-x',
                       'The wake-up command could not be sent.')
     if status == 'wol_error' and not reachable:
-        return result('Wake-on-LAN error', 'warning', 'circle-alert',
+        return result('wake_failed', 'Wake-on-LAN error', 'warning', 'circle-alert',
                       'Something went wrong while sending the wake-up signal.')
 
     if kind == 'wol':
         if reachable:
-            return result('Online', 'success', 'circle-check')
+            return result('online', 'Online', 'success', 'circle-check')
         if power_cut:
-            return result('Off — power cut', 'muted', 'power-off')
-        return result('Offline', 'muted', 'circle-x')
+            return result('off_expected', 'Offline', 'muted', 'power-off',
+                          'Off because of the power cut.')
+        # Someone switching off a Wake-on-LAN-only machine is normal.
+        return result('off_expected', 'Offline', 'muted', 'circle-x')
 
     agent_fresh = status in AGENT_STATUSES and age is not None and age < stale_seconds
     if reachable:
         if agent_fresh:
-            return result('Online', 'success', 'circle-check')
+            return result('online', 'Online', 'success', 'circle-check')
         if status in AGENT_STATUSES:
-            return result('Status stale', 'warning', 'clock',
+            return result('stale', 'Status stale', 'warning', 'clock',
                           "Its UPS script stopped checking in. It may not shut down in a power cut.")
-        return result('No agent', 'danger', 'wrench',
+        return result('no_agent', 'No agent', 'danger', 'wrench',
                       "It answers pings, but its UPS script has never checked in, so it "
                       "won't shut down in a power cut.")
     if power_cut:
-        return result('Off — power cut', 'muted', 'power-off')
-    return result('Offline', 'danger', 'circle-x', 'It does not answer pings.')
+        return result('off_expected', 'Offline', 'muted', 'power-off',
+                      'Turned off for the power cut.')
+    return result('offline', 'Offline', 'danger', 'circle-x', 'It does not answer pings.')
 
 
 VERDICT_WORDS = {'OL': 'Keep running', 'OB': 'Keep running on battery', 'OB LB': 'Shut down'}
@@ -170,16 +176,18 @@ def build_machines(wake_hosts, client_statuses, reach_hosts, power_state, stale_
 
         status = machine_status(kind, reachable, record, age, stale_seconds, power_cut)
         auto_wol = params.get('AUTO_WOL', 'true').strip().lower() != 'false'
-        if restoring and not reachable and status['label'] in ('Off', 'Offline', 'Off — power cut'):
+        if restoring and not reachable and status['key'] in OFF_KEYS:
             if auto_wol and params.get('MAC'):
-                status = {'label': 'Waiting to wake', 'tone': 'info', 'icon': 'clock', 'pulse': False,
+                status = {'key': 'waiting_wake', 'label': 'Waiting to wake', 'tone': 'info',
+                          'icon': 'clock', 'pulse': False,
                           'note': 'It will be woken when Wake-on-LAN goes out.'}
             else:
-                status = {'label': 'Off', 'tone': 'muted', 'icon': 'power-off', 'pulse': False,
+                status = {'key': 'off_expected', 'label': 'Offline', 'tone': 'muted',
+                          'icon': 'power-off', 'pulse': False,
                           'note': 'Automatic wake-up is off for this machine. Use Wake to start it.'}
 
         countdown = None
-        if status['label'] == 'Shutting down' and (record or {}).get('status') == 'shutdown_pending':
+        if status['key'] == 'countdown':
             remaining = as_int(record.get('remaining_seconds'), 0) - int(age or 0)
             total = as_int(record.get('shutdown_delay'), 0) * 60
             countdown = {
@@ -231,10 +239,7 @@ def build_machines(wake_hosts, client_statuses, reach_hosts, power_state, stale_
             'verdict': verdict,
             # Problems a person should look at - not the shutdowns a power cut
             # is supposed to cause.
-            # A Wake-on-LAN-only machine being off is normal (someone switched
-            # it off); for a protected machine it is not.
-            'needs_attention': (status['label'] in ATTENTION_LABELS
-                                and not (kind == 'wol' and status['label'] == 'Offline')),
+            'needs_attention': status['key'] in ATTENTION_KEYS,
         })
     return machines
 
@@ -270,7 +275,7 @@ def build_banner(power_state, simulation, manager_state, machines, sentinels_onl
 
     if sentinels_total and sentinels_online == 0:
         counting = [m for m in clients if m['countdown']]
-        down = [m for m in clients if m['status']['label'].startswith('Off')]
+        down = [m for m in clients if m['status']['key'] in OFF_KEYS]
         parts = []
         if since_local and state_name == 'POWER_FAIL':
             parts.append(f"No sentinel has answered since {since_local:%H:%M}.")
@@ -358,10 +363,12 @@ def build_tiles(power_state, machines, sentinels_online, sentinels_total, wol_de
          'value': str(sentinels_online) if power_state else '—',
          'suffix': f'of {sentinels_total}' if power_state else None,
          'hint': ('All answering' if sentinels_online == sentinels_total
-                  else f'{sentinels_total - sentinels_online} not answering') if power_state else None},
+                  else f'{sentinels_total - sentinels_online} not answering') if power_state else None,
+         'hint_tone': 'danger' if power_state and sentinels_online < sentinels_total else None},
         {'label': 'Machines protected', 'icon': 'server', 'value': str(len(clients)),
          'hint': (f"{len(attention)} {'needs' if len(attention) == 1 else 'need'} attention"
-                  if attention else 'All reporting normally')},
+                  if attention else 'All reporting normally'),
+         'hint_tone': 'danger' if attention else None},
     ]
 
     battery = (power_state or {}).get('battery') or {}
@@ -381,10 +388,11 @@ def build_tiles(power_state, machines, sentinels_online, sentinels_total, wol_de
             if battery.get('ac_power') is False and runtime is not None:
                 details.append(f'~{runtime} min left')
             tiles.append({'label': 'Battery', 'icon': 'battery-charging' if battery.get('ac_power') else 'battery-low',
-                          'value': f"{battery['soc']:.0f}%", 'hint': ' · '.join(details)})
+                          'value': f"{battery['soc']:.0f}%", 'hint': ' · '.join(details),
+                          'hint_tone': 'warning' if battery.get('ac_power') is False else None})
         else:
             tiles.append({'label': 'Battery', 'icon': 'battery-warning', 'value': '—',
-                          'hint': 'Monitor unavailable'})
+                          'hint': 'Monitor unavailable', 'hint_tone': 'warning'})
 
     tiles.append({'label': 'Wake-up delay', 'icon': 'clock', 'value': str(wol_delay), 'suffix': 'min',
                   'hint': 'after power returns'})

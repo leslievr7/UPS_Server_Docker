@@ -5,9 +5,9 @@
 <div class="page-header">
   <h1>Dashboard</h1>
   <span class="live-chip" id="live-chip" data-side="bottom" data-align="end"
-        data-tooltip="Refreshes every 5 seconds{% if view and view.checked_local %} · last check {{ view.checked_local }}{% endif %}">
+        data-tooltip="{% if view and view.watch_stale %}The UPS server stopped checking the power{% else %}The UPS server checks power every 15 s{% endif %}{% if view and view.checked_local %} · last check {{ view.checked_local }}{% endif %}">
     <span class="status" id="live-label"
-          {% if view and view.watch_stale %}data-tone="warning">Paused{% else %}data-tone="success" data-pulse>Live{% endif %}</span>
+          {% if view and view.watch_stale %}data-tone="warning">Monitoring paused{% else %}data-tone="success" data-pulse>Monitoring{% endif %}</span>
   </span>
 </div>
 
@@ -44,6 +44,7 @@
   var chipLabel = document.getElementById('live-label');
   var lastHtml = null;
   var openTip = null;   /* id of the info tooltip the user tapped open, kept across redraws */
+  var shownTiles = {};  /* summary tiles whose hint the user tapped to show */
   var dialog = document.getElementById('wake-dialog');
   var pending = false;
   var failures = 0;
@@ -78,9 +79,9 @@
         if (!r.ok) throw new Error('HTTP ' + r.status);
         var checked = r.headers.get('X-Checked-At');
         if (r.headers.get('X-Watch-Stale') === '1') {
-          setChip('warning', 'Paused', 'The power watchman has stopped checking' + (checked ? ' · last check ' + checked : ''));
+          setChip('warning', 'Monitoring paused', 'The UPS server stopped checking the power' + (checked ? ' · last check ' + checked : ''));
         } else {
-          setChip('success', 'Live', 'Refreshes every 5 seconds' + (checked ? ' · last check ' + checked : ''));
+          setChip('success', 'Monitoring', 'The UPS server checks power every 15 s' + (checked ? ' · last check ' + checked : ''));
         }
         return r.text();
       })
@@ -90,6 +91,9 @@
         if (html === lastHtml) return;
         lastHtml = html;
         live.innerHTML = html;
+        live.querySelectorAll('.stat[data-tile]').forEach(function (el) {
+          if (shownTiles[el.dataset.tile]) el.setAttribute('data-show', '');
+        });
         if (openTip) {
           var tip = document.getElementById(openTip);
           if (tip) {
@@ -101,7 +105,7 @@
       })
       .catch(function () {
         failures += 1;
-        if (failures >= 2) setChip('danger', 'Offline', "Can't reach the server — showing the last known state");
+        if (failures >= 2) setChip('danger', 'Server unreachable', "This page can't reach the UPS server — showing the last known state");
       })
       .finally(function () { pending = false; });
   }
@@ -128,6 +132,14 @@
       t.querySelector('button').setAttribute('aria-expanded', 'true');
       openTip = t.querySelector('[role="tooltip"]').id;
     }
+  });
+  /* A tap on a summary tile shows or hides its hint (phones have no hover). */
+  live.addEventListener('click', function (event) {
+    var tile = event.target.closest('.stat[data-tile]');
+    if (!tile) return;
+    var key = tile.dataset.tile;
+    shownTiles[key] = !shownTiles[key];
+    if (shownTiles[key]) tile.setAttribute('data-show', ''); else tile.removeAttribute('data-show');
   });
   document.addEventListener('keydown', function (event) {
     if (event.key === 'Escape') { closeTips(); if (document.activeElement) document.activeElement.blur(); }

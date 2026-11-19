@@ -86,7 +86,12 @@ def test_power_cut_with_countdown():
     assert v['banner']['tone'] == 'danger'
     assert v['banner']['title'] == 'Power cut — shutting machines down'
     proxmox, nas = v['clients']
-    assert proxmox['status']['label'] == 'Off — power cut'
+    assert proxmox['status']['label'] == 'Offline'
+    assert proxmox['status']['tone'] == 'muted'
+    assert proxmox['status']['note'] == 'Turned off safely for the power cut.'
+    # Problem hints carry a tone so they stay visible.
+    assert v['tiles'][0]['hint'] == '2 not answering'
+    assert v['tiles'][0]['hint_tone'] == 'danger'
     assert nas['status']['label'] == 'Shutting down'
     assert nas['countdown']['remaining'] == 90
     assert not any(m['needs_attention'] for m in v['clients'])
@@ -140,3 +145,18 @@ def test_quiet_watchman_is_flagged():
 def test_agent_never_reported():
     v = view(clients={'192.0.2.10': online()})
     assert v['clients'][1]['agent_text'] == 'Never reported'
+
+
+def test_unexpected_offline_needs_attention():
+    v = view(hosts={'192.0.2.10': False, '192.0.2.11': True, '192.0.2.13': True},
+             clients={'192.0.2.11': online()})
+    proxmox = v['clients'][0]
+    assert proxmox['status']['label'] == 'Offline'
+    assert proxmox['status']['tone'] == 'danger'
+    assert proxmox['needs_attention']
+    assert v['tiles'][1]['hint_tone'] == 'danger'
+
+
+def test_quiet_hints_have_no_tone():
+    v = view(clients={'192.0.2.10': online(), '192.0.2.11': online()})
+    assert all(not t.get('hint_tone') for t in v['tiles'])

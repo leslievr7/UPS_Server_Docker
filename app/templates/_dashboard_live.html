@@ -71,12 +71,12 @@
   <div class="alert" data-variant="info">{{ ui.icon('info') }}<h2>Battery rules are in observe mode</h2><section>{{ view.observe_note }}</section></div>
   {% endif %}
 
-  <div class="grid-auto" style="--min:9.5rem">
+  <div class="grid-auto stat-grid" style="--min:9.5rem">
     {% for t in view.tiles %}
-    <div class="stat">
+    <div class="stat" data-tile="{{ t.label }}">
       <span class="stat-label">{{ ui.icon(t.icon) }}{{ t.label }}</span>
       <span class="stat-value">{{ t.value }}{% if t.suffix %} <small>{{ t.suffix }}</small>{% endif %}</span>
-      {% if t.hint %}<span class="stat-hint">{{ t.hint }}</span>{% endif %}
+      <span class="stat-hint"{% if t.hint_tone %} data-tone="{{ t.hint_tone }}"{% endif %}>{{ t.hint or '' }}</span>
     </div>
     {% endfor %}
   </div>
@@ -116,7 +116,7 @@
     </div>
     <div class="card"><section class="stack">
       {% if view.sentinels %}
-      <div class="cluster cluster-lg">
+      <div class="sentinel-grid">
         {% for s in view.sentinels %}
           <span class="status mono" data-tone="{{ 'success' if s.up else 'danger' }}">{{ s.ip }}</span>
         {% endfor %}
