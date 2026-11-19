@@ -43,3 +43,8 @@ dev/.styles/
 !app/static/icons/lucide.svg
 # Web login credentials and session secret (created on first run)
 config/web_auth.json
+
+# Safe-save side files (app/config_store.py)
+config/power_manager.conf.bak
+config/.power_manager.conf.lock
+config/.power_manager.conf.*.tmp

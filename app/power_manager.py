@@ -15,6 +15,7 @@ from email.mime.text import MIMEText
 from email.utils import formataddr
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import config_store
 import reachability
 from battery_monitor import BatteryMonitor
 from power_source import (
@@ -146,50 +147,15 @@ def read_power_manager_config():
     return config, wake_hosts, schedules
 
 def save_setting_to_config(key, value, section=None):
-    """Safely saves a single setting back to the config file with file locking."""
-    section = section or None  # Main config section
-    
+    """Safely saves a single setting back to the config file.
+
+    Goes through config_store, which takes turns with the web pages (lock),
+    swaps in a complete new copy, and keeps everything else in the file as is.
+    """
     try:
-        # Use file locking to prevent race conditions
-        with open(CONFIG_FILE, 'r+') as f:
-            fcntl.flock(f.fileno(), fcntl.LOCK_EX)
-            
-            lines = f.readlines()
-            f.seek(0)
-            f.truncate()
-            
-            in_correct_section = section is None  # True for main config
-            key_found = False
-            
-            for line in lines:
-                stripped = line.strip()
-                
-                # Check for section headers
-                if stripped.startswith('[') and stripped.endswith(']'):
-                    current_section = stripped[1:-1]
-                    in_correct_section = current_section == section
-                    f.write(line)
-                    continue
-                
-                # Check for our key in the correct section
-                if in_correct_section and '=' in stripped and not stripped.startswith('#'):
-                    line_key = stripped.split('=')[0].strip()
-                    if line_key == key:
-                        # Preserve original formatting but update value
-                        indent = len(line) - len(line.lstrip())
-                        f.write(' ' * indent + f'{key}="{value}"\n')
-                        key_found = True
-                        continue
-                
-                f.write(line)
-            
-            # If key wasn't found, add it to the end of the correct section
-            if not key_found:
-                if section is not None:
-                    f.write(f'\n[{section}]\n')
-                f.write(f'{key}="{value}"\n')
-                
-    except IOError as e:
+        if not config_store.set_value(CONFIG_FILE, key, value, section):
+            log.warning(f"Not saving {key}: section [{section}] no longer exists")
+    except (IOError, OSError) as e:
         log.error(f"Failed to save setting {key}={value}: {e}")
         raise
 

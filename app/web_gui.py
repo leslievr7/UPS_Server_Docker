@@ -16,7 +16,7 @@ import smtplib
 import re
 from email.mime.text import MIMEText
 from email.utils import formataddr
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, make_response
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, make_response, g, has_request_context
 from werkzeug.exceptions import BadRequest
 
 
@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from api import API_TOKEN, get_ups_name, get_server_ip, read_power_state
 from battery_monitor import BatteryMonitor
 from dashboard_view import build_dashboard
+import config_store
 import reachability
 import web_auth
 import web_settings
@@ -150,130 +151,40 @@ def get_client_statuses():
         return {}
 
 def read_power_manager_config():
-    """Read and parse power_manager.conf file to get main config, wake hosts, and schedules."""
-    config = {}
-    wake_hosts = {}
-    schedules = {}
-    current_section = None
-    
-    if not os.path.exists(POWER_MANAGER_CONFIG):
-        return config, wake_hosts, schedules
-    
-    with open(POWER_MANAGER_CONFIG, 'r') as f:
-        for line in f:
-            line = line.strip()
-            if not line or line.startswith('#'):
-                continue
-            
-            # Check for section headers
-            if line.startswith('[') and line.endswith(']'):
-                current_section = line[1:-1]
-                if current_section.startswith('WAKE_HOST_'):
-                    wake_hosts[current_section] = {}
-                elif current_section.startswith('SCHEDULE_'):
-                    schedules[current_section] = {}
-                else:
-                    # Reset if it's not a known section type, allowing for future sections
-                    current_section = None 
-                continue
-            
-            # Parse key=value pairs
-            if '=' in line:
-                key, value = line.split('=', 1)
-                key = key.strip()
-                # Remove quotes from values if present, strip whitespace again
-                value = value.strip().strip('"\'').strip()
+    """Read power_manager.conf: (main config, wake hosts, schedules).
 
-                if current_section:
-                    if current_section.startswith('WAKE_HOST_'):
-                        wake_hosts[current_section][key] = value
-                    elif current_section.startswith('SCHEDULE_'):
-                        schedules[current_section][key] = value
-                else:
-                    # This is a main config parameter
-                    config[key] = value
-    
-    return config, wake_hosts, schedules
+    Inside a request, what was read is remembered, so a later
+    write_power_manager_config() in the same request applies only the changes
+    made since (see config_store).
+    """
+    parsed = config_store.read(POWER_MANAGER_CONFIG)
+    if has_request_context():
+        g.config_base = config_store.snapshot(parsed)
+    return parsed
+
+
+# Settings the old writer left out when empty; keep doing that.
+DROP_WHEN_EMPTY = (
+    'SMTP_SERVER', 'SMTP_PORT', 'SMTP_USE_TLS', 'SMTP_USER', 'SMTP_PASSWORD',
+    'SMTP_SENDER_NAME', 'SMTP_SENDER_EMAIL', 'SMTP_RECIPIENTS',
+    'BATTERY_SIMULATION', 'BATTERY_SIM_AC_POWER', 'BATTERY_SIM_SOC',
+    'BATTERY_SIM_VOLTAGE', 'BATTERY_SIM_CURRENT', 'BATTERY_SIM_REMAINING',
+)
 
 
 def write_power_manager_config(config, wake_hosts, schedules):
-    """Write power_manager.conf file, preserving comments and structure is hard, so we rewrite."""
-    with open(POWER_MANAGER_CONFIG, 'w') as f:
-        f.write("# === CONFIGURATION FILE FOR POWER_MANAGER.SH ===\n\n")
-        
-        # Main config keys order
-        main_keys = [
-            'SENTINEL_HOSTS', 'WOL_DELAY_MINUTES', 'WOL_CONFIRM_TIMEOUT_MINUTES',
-            'CLIENT_STALE_TIMEOUT_MINUTES', 'UPS_STATE_FILE', 'DEFAULT_BROADCAST_IP', 'API_TOKEN', 'POWER_SIMULATION_MODE', 'DEBUG_MODE'
-        ]
-        
-        # Write main configuration
-        for key in main_keys:
-            if key in config:
-                 f.write(f"{key}=\"{config[key]}\"\n")
-        
-        f.write("\n# === VICTRON BATTERY MONITOR (VBM) INTEGRATION ===\n")
-        battery_keys = [
-            'BATTERY_ENABLED', 'BATTERY_API_URL', 'BATTERY_API_TIMEOUT',
-            'BATTERY_MAX_DATA_AGE', 'BATTERY_FALLBACK_GRACE_CYCLES',
-            'BATTERY_CAPACITY_AH', 'BATTERY_ONLY_OUTAGE_CYCLES',
-            'BATTERY_AC_FALLBACK_VOLTAGE',
-            'BATTERY_AC_DISCHARGE_CURRENT', 'BATTERY_AC_CHARGE_CURRENT',
-            'BATTERY_DECISION_MODE',
-            'BATTERY_DEFAULT_POWER_SOURCE', 'BATTERY_DEFAULT_CRITICAL_VOLTAGE',
-            'BATTERY_DEFAULT_SHUTDOWN_VOLTAGE', 'BATTERY_DEFAULT_SHUTDOWN_SOC',
-            'BATTERY_DEFAULT_MIN_RUNTIME_MINUTES', 'BATTERY_DEFAULT_WOL_MIN_SOC',
-            'WOL_MAX_WAIT_MINUTES',
-        ]
-        for key in battery_keys:
-            if key in config:
-                f.write(f"{key}=\"{config[key]}\"\n")
+    """Save changes to power_manager.conf.
 
-        # Simulation overrides: an empty value means "use the real reading",
-        # so only write the ones that are actually set.
-        battery_sim_keys = [
-            'BATTERY_SIMULATION', 'BATTERY_SIM_AC_POWER', 'BATTERY_SIM_SOC',
-            'BATTERY_SIM_VOLTAGE', 'BATTERY_SIM_CURRENT', 'BATTERY_SIM_REMAINING',
-        ]
-        for key in battery_sim_keys:
-            if key in config and config[key]:
-                f.write(f"{key}=\"{config[key]}\"\n")
-
-        f.write("\n# === SMTP NOTIFICATIONS ===\n")
-        smtp_keys = [
-            'SMTP_SERVER', 'SMTP_PORT', 'SMTP_USE_TLS', 'SMTP_USER', 'SMTP_PASSWORD',
-            'SMTP_SENDER_NAME', 'SMTP_SENDER_EMAIL', 'SMTP_RECIPIENTS'
-        ]
-        for key in smtp_keys:
-            if key in config and config[key]:
-                f.write(f"{key}=\"{config[key]}\"\n")
-
-        f.write("\n# === NOTIFICATION SETTINGS ===\n")
-        notify_keys = [
-            'NOTIFY_POWER_FAIL', 'NOTIFY_POWER_RESTORED', 'NOTIFY_CLIENT_SHUTDOWN',
-            'NOTIFY_CLIENT_STALE', 'NOTIFY_APP_ERROR', 'NOTIFY_SIMULATION_MODE',
-            'NOTIFY_WOL_FAILURE'
-        ]
-        for key in notify_keys:
-            if key in config:
-                f.write(f"{key}=\"{config[key]}\"\n")
-
-
-        f.write("\n# === WAKE-ON-LAN HOST DEFINITIONS ===\n")
-        
-        # Write wake hosts
-        for section in sorted(wake_hosts.keys()):
-            f.write(f"\n[{section}]\n")
-            for key, value in wake_hosts[section].items():
-                f.write(f"{key}=\"{value}\"\n")
-
-        f.write("\n# === POWER OUTAGE SIMULATION SCHEDULES ===\n")
-        
-        # Write schedules
-        for section in sorted(schedules.keys()):
-            f.write(f"\n[{section}]\n")
-            for key, value in schedules[section].items():
-                f.write(f"{key}=\"{value}\"\n")
+    Only settings that differ from what this request read are written; anything
+    the power manager (or another browser tab) changed meanwhile, comments, and
+    settings this page doesn't know about are kept.
+    """
+    config = {k: v for k, v in config.items() if not (k in DROP_WHEN_EMPTY and not v)}
+    new = (config, wake_hosts, schedules)
+    base = g.get('config_base') if has_request_context() else None
+    config_store.save(POWER_MANAGER_CONFIG, new, base=base)
+    if has_request_context():
+        g.config_base = config_store.snapshot(new)
 
 def ping_host(ip):
     """Check if host is online"""
