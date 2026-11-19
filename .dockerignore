@@ -65,3 +65,6 @@ Thumbs.db
 # IMPORTANT: Do NOT add .git to .dockerignore
 # The .git directory is needed for version information during build
 # If you must exclude .git, the system will fall back to runtime versioning
+# Sandbox and dev tooling never ships in the image
+dev/
+tests/

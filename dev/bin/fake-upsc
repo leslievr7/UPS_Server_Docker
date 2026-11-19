@@ -1,0 +1,12 @@
+#!/bin/sh
+# Sandbox stand-in for NUT's upsc. Prints a few typical variables plus the
+# status line the power manager writes to the virtual device file.
+[ -n "$UPS_SANDBOX" ] || exit 2
+echo "device.mfr: Sandbox"
+echo "device.model: Pretend UPS"
+echo "device.type: ups"
+echo "driver.name: dummy-ups"
+echo "driver.version: 2.8.0"
+echo "ups.mfr: Sandbox"
+echo "ups.model: Pretend UPS"
+cat "$UPS_SANDBOX/run/nut/virtual.device" 2>/dev/null || echo "ups.status: OL"

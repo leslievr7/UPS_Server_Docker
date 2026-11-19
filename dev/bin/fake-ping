@@ -1,0 +1,8 @@
+#!/bin/sh
+# Sandbox stand-in for /bin/ping. Never touches the network.
+# Called as: fake-ping -c 1 -W 1 <ip>. The last argument is the address.
+# A host "answers" when its address is listed in the pretend world's
+# reachable.txt, which dev/run_local.py keeps up to date.
+for last; do :; done
+[ -n "$UPS_SANDBOX" ] || exit 2
+grep -qxF "$last" "$UPS_SANDBOX/world/reachable.txt" 2>/dev/null

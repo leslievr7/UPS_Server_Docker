@@ -35,3 +35,5 @@ Documentation/PRD_v2.md
 # Draft replies / community posts (not for GitHub)
 docs/reddit-*.md
 .claude/
+# Sandbox runtime folder (dev/run_local.py)
+dev/.sandbox/

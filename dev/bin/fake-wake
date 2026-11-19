@@ -1,0 +1,7 @@
+#!/bin/sh
+# Sandbox stand-in for the Wake-on-LAN command. Sends nothing anywhere.
+# Called as: fake-wake -i <broadcast> <mac>. It only records the request,
+# so dev/run_local.py can "boot" the matching pretend machine.
+for last; do :; done
+[ -n "$UPS_SANDBOX" ] || exit 2
+echo "$(date +%s) $last" >> "$UPS_SANDBOX/world/wake_requests.log"
