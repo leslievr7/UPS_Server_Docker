@@ -15,6 +15,10 @@ import json
 import sys
 from datetime import datetime
 from flask import Flask, jsonify, request, abort
+from werkzeug.exceptions import HTTPException
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import client_status as client_status_store  # noqa: E402
 
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -496,7 +500,9 @@ def get_config():
 
         app.logger.info(f"Generated configuration for {client_ip}: {response_config}")
         return jsonify(response_config)
-        
+
+    except HTTPException:
+        raise  # e.g. the 404 above; don't turn it into a 500
     except Exception as e:
         app.logger.error(f"Error reading configuration: {e}")
         abort(500, description=f"Server configuration error: {e}")
@@ -522,26 +528,10 @@ def update_client_status():
         'timestamp': datetime.utcnow().isoformat() + "Z"
     }
 
-    # Read existing statuses
+    # Several API workers (and the power manager) can write at the same moment;
+    # client_status takes care of taking turns.
     try:
-        if os.path.exists(CLIENT_STATUS_FILE):
-            with open(CLIENT_STATUS_FILE, 'r') as f:
-                statuses = json.load(f)
-        else:
-            statuses = {}
-    except (IOError, json.JSONDecodeError):
-        statuses = {}
-
-    # Update status for the specific client
-    statuses[client_ip] = client_status
-    
-    # Write back to the file atomically
-    try:
-        temp_file = CLIENT_STATUS_FILE + ".tmp"
-        with open(temp_file, 'w') as f:
-            json.dump(statuses, f)
-        # Atomic move operation
-        os.rename(temp_file, CLIENT_STATUS_FILE)
+        client_status_store.update(CLIENT_STATUS_FILE, client_ip, client_status)
     except IOError as e:
         app.logger.error(f"Could not write client status file: {e}")
         abort(500, description="Server error: Could not write status file.")

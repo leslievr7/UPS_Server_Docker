@@ -105,10 +105,10 @@ def test_config_immediate_shutdown_stays_zero(client):
     assert data['IGNORE_SIMULATION'] is False
 
 
-def test_config_unknown_machine_is_refused(client):
-    # Upstream answers 500 here (its own 404 is caught and re-raised); the
-    # client only checks for success, so any error is fine.
-    assert client.get('/config?ip=192.0.2.99', headers=AUTH).status_code >= 400
+def test_config_unknown_machine_is_not_found(client):
+    # ups_monitor.sh uses curl --fail, so any error code reads as "no config";
+    # 404 just says what actually happened (upstream answered 500).
+    assert client.get('/config?ip=192.0.2.99', headers=AUTH).status_code == 404
 
 
 def test_status_heartbeat_is_recorded(client):
@@ -118,3 +118,21 @@ def test_status_heartbeat_is_recorded(client):
     saved = json.loads((client.tmp / 'client_status.json').read_text())['192.0.2.10']
     assert saved['status'] == 'shutdown_pending'
     assert saved['remaining_seconds'] == 120
+
+
+def test_heartbeats_from_many_machines_at_once_are_all_kept(client):
+    import threading
+    ips = [f'192.0.2.{n}' for n in range(20, 40)]
+
+    def beat(ip):
+        c = api.app.test_client()
+        for _ in range(5):
+            c.post('/status', headers=AUTH, json={'ip': ip, 'status': 'online'})
+
+    threads = [threading.Thread(target=beat, args=(ip,)) for ip in ips]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    saved = json.loads((client.tmp / 'client_status.json').read_text())
+    assert set(ips) <= set(saved)

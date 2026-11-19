@@ -492,6 +492,7 @@ details.advanced[open] > summary { margin-bottom: 0.75rem; }
 .list-main h3 { overflow-wrap: anywhere; }
 .list-actions { display: flex; align-items: center; gap: 0.125rem; flex-shrink: 0; }
 .list-actions .list-switch { margin-right: 0.5rem; }
+.setting-select { width: auto; flex-shrink: 0; }
 
 .form-dialog > div { width: min(36rem, calc(100vw - 2rem)); }
 .form-dialog > div > section { max-height: min(70vh, 40rem); overflow-y: auto; }

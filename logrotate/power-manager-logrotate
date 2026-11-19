@@ -5,8 +5,9 @@
     # Rotate the log file daily.
     daily
 
-    # Keep 7 days of backlogs.
-    rotate 7
+    # Keep up to 30 days of backlogs. app/log_retention.py deletes the ones
+    # older than the "Keep logs for" setting (7 days unless changed).
+    rotate 31
 
     # Create new log files after rotating old ones.
     create

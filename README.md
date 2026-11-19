@@ -357,6 +357,22 @@ For example, if your UPS server host has IP `192.168.1.10`:
 http://192.168.1.10
 ```
 
+The first time you open it, you create an admin password, then the server offers to find good sentinels on your network for you.
+
+**Tip for sentinels:** put your router and network switch on the UPS too, so the server can still reach your machines during a power cut, and pick sentinels that are plugged into the wall (smart plugs, TV boxes, speakers). If the network itself loses power, every sentinel looks silent whether the power is out or not.
+
+### Using a reverse proxy
+
+You can also open the web page through a reverse proxy such as Nginx Proxy Manager, Traefik or Pangolin, over HTTP or HTTPS, alongside opening it by IP address.
+
+1. Point the proxy at `http://<UPS_SERVER_IP>:80`.
+2. In **Settings → Security → Reverse proxy**, enter the address of each proxy that connects to the server directly. The page shows the address it was reached from, and, once that's trusted, the visitor it was passed on for.
+3. Open the page through the proxy and check that visitor address is your own device. With chained proxies (for example Pangolin forwarding through Nginx Proxy Manager), an inner proxy may show up there instead, often a `172.x` Docker address: add that one too.
+
+That lets the server see each visitor's real address, so wrong-password pauses apply to that visitor rather than to everyone behind the proxy, and it keeps the sign-in cookie HTTPS-only when the page is opened over HTTPS.
+
+> **Never expose port 5000.** That's the API your machines use to get their shutdown instructions. Only the web page (port 80) belongs behind a proxy. If you make the page reachable from the internet, an extra login in front of it (for example, your proxy's own authentication) is a good idea: this page can turn machines off and wake them.
+
 ### Web GUI Features
 
   * **Dashboard**: Real-time monitoring of system status, sentinel hosts, and UPS clients. Shows a live countdown for clients that are shutting down.

@@ -117,9 +117,21 @@
 
       <div class="card">
         <header><h2>Troubleshooting</h2></header>
-        <section>
+        <section class="switch-list">
           {{ switch('debug_mode', 'Detailed logging', 'Writes much more to the log. Only useful while troubleshooting. Saves straight away.',
                     c.get('DEBUG_MODE') == 'true', autosave='DEBUG_MODE') }}
+          {% set keep = c.get('LOG_RETENTION_DAYS', '7') if c.get('LOG_RETENTION_DAYS') in ('3', '7', '14', '30') else '7' %}
+          <div class="field setting-switch" data-orientation="horizontal">
+            <section>
+              <h3><label for="log_retention_days">Keep logs for</label></h3>
+              <p class="muted small">Older logs are deleted overnight. Longer uses more space on the server's storage. Saves straight away.</p>
+            </section>
+            <select class="select setting-select" id="log_retention_days" data-autosave-choice="LOG_RETENTION_DAYS" data-saved="{{ keep }}">
+              {% for d in ('3', '7', '14', '30') %}
+              <option value="{{ d }}" {% if d == keep %}selected{% endif %}>{{ d }} days</option>
+              {% endfor %}
+            </select>
+          </div>
         </section>
       </div>
     </div>
@@ -446,6 +458,23 @@
           </div>
         </section>
         <footer><button type="submit" class="btn">Change password</button></footer>
+      </form>
+
+      <form method="post" action="{{ url_for('save_trusted_proxies') }}" class="card">
+        {{ csrf() }}
+        <header><h2>Reverse proxy</h2>
+          <p>Only needed if you open this page through a proxy, like Nginx Proxy Manager or Pangolin.</p></header>
+        <section class="stack">
+          <div class="field">
+            <label for="trusted_proxies">Proxy addresses I trust</label>
+            <textarea class="textarea mono" id="trusted_proxies" name="trusted_proxies" rows="2"
+                      placeholder="192.168.1.20">{{ trusted_proxies | join('\n') }}</textarea>
+            <p>The address of each proxy that connects to this server directly, one per line. A range like 192.168.1.0/24 works too. Leave it empty if you only open this page by its IP address.</p>
+          </div>
+          <p class="small">This page reached the server from <span class="mono">{{ request.environ.get('ups.peer_addr') or request.remote_addr }}</span>{% if request.environ.get('ups.peer_addr') and request.remote_addr != request.environ.get('ups.peer_addr') %}, a trusted proxy, on behalf of <span class="mono">{{ request.remote_addr }}</span>{% endif %}.</p>
+          <p class="small muted">Expose only this web page (port 80) through a proxy. Never expose port 5000: that's where your machines get their power-off instructions.</p>
+        </section>
+        <footer><button type="submit" class="btn">Save proxy settings</button></footer>
       </form>
 
       <div class="card">
@@ -782,7 +811,21 @@
   }
   document.addEventListener('change', function (e) {
     var input = e.target;
-    if (input.dataset.autosave) {
+    if (input.dataset.autosaveChoice) {
+      var before = input.dataset.saved;
+      input.disabled = true;
+      post('{{ url_for("save_choice") }}', { name: input.dataset.autosaveChoice, value: input.value })
+        .then(function (reply) {
+          if (reply.success) { input.dataset.saved = input.value; window.uiToast('success', reply.message); }
+          else { input.value = before; window.uiToast('error', reply.message || "That didn't save. Please try again."); }
+        })
+        .catch(function (e) {
+          if (e.message === 'signed out') return;
+          input.value = before;
+          window.uiToast('error', "That didn't save.", "The server didn't answer. Check it's running and try again.");
+        })
+        .finally(function () { input.disabled = false; });
+    } else if (input.dataset.autosave) {
       flip(input, '{{ url_for("save_switch") }}', { name: input.dataset.autosave, state: input.checked ? 'on' : 'off' });
     } else if (input.dataset.scheduleToggle) {
       var section = input.dataset.scheduleToggle;

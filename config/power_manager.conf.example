@@ -147,11 +147,21 @@ BATTERY_DEFAULT_POWER_SOURCE="sentinel"
 # a 56A load moved onto it, still at 99% SoC. Set too high, the voltage rule
 # trips around half charge and trips for every host at once, which throws away
 # the per-host thresholds. Measure your own bank under its real load.
-BATTERY_DEFAULT_CRITICAL_VOLTAGE="11.0"     # V - shut down immediately
-BATTERY_DEFAULT_SHUTDOWN_VOLTAGE="11.4"     # V - shut down
-BATTERY_DEFAULT_SHUTDOWN_SOC="25"           # % - shut down
-BATTERY_DEFAULT_MIN_RUNTIME_MINUTES="0"     # min - 0 disables this rule
-BATTERY_DEFAULT_WOL_MIN_SOC="0"             # % - 0 disables the WoL gate
+#
+# Comments go on their own line: text after a value on the same line becomes
+# part of the value.
+
+# Volts: below this, shut down immediately.
+BATTERY_DEFAULT_CRITICAL_VOLTAGE="11.0"
+# Volts: below this, shut down.
+BATTERY_DEFAULT_SHUTDOWN_VOLTAGE="11.4"
+# Percent charge: below this, shut down.
+BATTERY_DEFAULT_SHUTDOWN_SOC="25"
+# Minutes of runtime left: below this, shut down. 0 turns this rule off.
+BATTERY_DEFAULT_MIN_RUNTIME_MINUTES="0"
+# Percent charge: don't wake machines until the battery is back above this.
+# 0 turns this check off.
+BATTERY_DEFAULT_WOL_MIN_SOC="0"
 
 # Safety net for the WoL charge gate: after this many minutes of waiting for
 # the battery to recover, hosts are woken regardless, so a stuck or failed
@@ -163,11 +173,16 @@ WOL_MAX_WAIT_MINUTES="240"
 # be exercised without actually draining the battery. Leave a value empty to
 # keep the real one. Works independently of POWER_SIMULATION_MODE.
 BATTERY_SIMULATION="false"
-BATTERY_SIM_AC_POWER=""       # true | false
-BATTERY_SIM_SOC=""            # percent, e.g. 25
-BATTERY_SIM_VOLTAGE=""        # volts, e.g. 11.9
-BATTERY_SIM_CURRENT=""        # amps, e.g. -30
-BATTERY_SIM_REMAINING=""      # minutes, e.g. 20
+# Mains power present: true or false.
+BATTERY_SIM_AC_POWER=""
+# Charge in percent, e.g. 25.
+BATTERY_SIM_SOC=""
+# Volts, e.g. 11.9.
+BATTERY_SIM_VOLTAGE=""
+# Amps, e.g. -30 (negative means discharging).
+BATTERY_SIM_CURRENT=""
+# Minutes of runtime left, e.g. 20.
+BATTERY_SIM_REMAINING=""
 
 # === SMTP NOTIFICATIONS ===
 # SMTP_SERVER="smtp.example.com"

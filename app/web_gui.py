@@ -364,6 +364,7 @@ def config():
                              ups_clients=ups_clients,
                              schedules=schedules,
                              schedules_past=[k for k, s in schedules.items() if one_time_is_past(s)],
+                             trusted_proxies=web_auth.trusted_proxies(),
                              version_info=get_version_info())
     except Exception as e:
         app.logger.error(f"Error in config route: {str(e)}", exc_info=True)

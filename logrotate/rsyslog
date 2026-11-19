@@ -16,7 +16,8 @@
 {
     # Every power check is logged here as well as in power_manager.log.
     daily
-    rotate 7
+    # Up to 30 days; app/log_retention.py trims to the chosen setting.
+    rotate 31
     missingok
     notifempty
     compress

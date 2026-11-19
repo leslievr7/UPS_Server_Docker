@@ -22,6 +22,7 @@ and reloads it.
 """
 
 import hmac
+import ipaddress
 import json
 import os
 import secrets
@@ -147,6 +148,99 @@ def password_problem(password, confirm):
     return None
 
 
+# --- reverse proxies -----------------------------------------------------------
+#
+# Behind a proxy (Nginx Proxy Manager, Pangolin/Traefik...) every visitor seems
+# to come from the proxy's address. Proxies add a note saying who the real
+# visitor is (X-Forwarded-For) and whether they used HTTPS (X-Forwarded-Proto),
+# but anyone can write those notes, so they're only believed when the request
+# comes straight from an address the admin listed as a trusted proxy.
+
+def trusted_proxies():
+    return list(_load().get('trusted_proxies', []))
+
+
+def proxy_problem(entries):
+    """A plain-words reason the list can't be saved, or None."""
+    bad = []
+    for entry in entries:
+        try:
+            ipaddress.ip_network(entry, strict=False)
+        except ValueError:
+            bad.append(entry)
+    if bad:
+        return f"{', '.join(bad)} isn't an IP address or range."
+    return None
+
+
+def set_trusted_proxies(entries):
+    data = dict(_load())
+    data['trusted_proxies'] = list(entries)
+    _write(data)
+    _cache['mtime'] = None
+
+
+_networks_cache = {'key': None, 'nets': []}
+
+
+def _trusted_networks():
+    entries = tuple(_load().get('trusted_proxies', []))
+    if entries != _networks_cache['key']:
+        nets = []
+        for entry in entries:
+            try:
+                nets.append(ipaddress.ip_network(entry, strict=False))
+            except ValueError:
+                pass
+        _networks_cache.update(key=entries, nets=nets)
+    return _networks_cache['nets']
+
+
+def _is_trusted(addr, nets):
+    try:
+        ip = ipaddress.ip_address(addr)
+    except ValueError:
+        return False
+    return any(ip in net for net in nets)
+
+
+class ProxyAware:
+    """WSGI middleware: use the real visitor's address and scheme behind a trusted proxy.
+
+    The proxy's own address stays available as environ['ups.peer_addr'].
+    """
+
+    def __init__(self, wsgi_app):
+        self.wsgi_app = wsgi_app
+
+    def __call__(self, environ, start_response):
+        peer = environ.get('REMOTE_ADDR', '')
+        environ['ups.peer_addr'] = peer
+        nets = _trusted_networks()
+        if nets and _is_trusted(peer, nets):
+            hops = [h.strip() for h in environ.get('HTTP_X_FORWARDED_FOR', '').split(',') if h.strip()]
+            client = peer
+            # Read from the nearest hop outwards; the first address that isn't
+            # one of our own proxies is the visitor. Proxies can be chained,
+            # e.g. Pangolin -> Nginx Proxy Manager -> this server.
+            for hop in reversed(hops):
+                try:
+                    ipaddress.ip_address(hop)
+                except ValueError:
+                    break
+                client = hop
+                if not _is_trusted(hop, nets):
+                    break
+            environ['REMOTE_ADDR'] = client
+            proto = environ.get('HTTP_X_FORWARDED_PROTO', '').split(',')[0].strip().lower()
+            if proto in ('http', 'https'):
+                environ['wsgi.url_scheme'] = proto
+            host = environ.get('HTTP_X_FORWARDED_HOST', '').split(',')[0].strip()
+            if host:
+                environ['HTTP_HOST'] = host
+        return self.wsgi_app(environ, start_response)
+
+
 # --- wrong-password pauses --------------------------------------------------
 
 def _client():
@@ -209,10 +303,17 @@ class _FileSecretSessions(SecureCookieSessionInterface):
         app.secret_key = _load()['secret_key']
         return super().get_signing_serializer(app)
 
+    def get_cookie_secure(self, app):
+        # Opened over HTTPS (directly or through a trusted proxy): the sign-in
+        # cookie is never sent over plain HTTP. Opened by IP over HTTP: it
+        # still works.
+        return request.is_secure
+
 
 def init_app(app):
     """Protect every route of `app`."""
     app.session_interface = _FileSecretSessions()
+    app.wsgi_app = ProxyAware(app.wsgi_app)
     app.config.update(
         SESSION_COOKIE_HTTPONLY=True,
         SESSION_COOKIE_SAMESITE='Lax',
@@ -317,4 +418,17 @@ def init_app(app):
         session.permanent = True
         session['signed_in'] = True
         flash('Password changed. Other devices have been signed out.', 'success')
+        return redirect(url_for('config') + '#security')
+
+    @app.route('/security/proxies', methods=['POST'])
+    def save_trusted_proxies():
+        entries = request.form.get('trusted_proxies', '').replace(',', ' ').split()
+        entries = list(dict.fromkeys(entries))
+        problem = proxy_problem(entries)
+        if problem:
+            flash(problem + ' Nothing was saved.', 'error')
+            return redirect(url_for('config') + '#security')
+        set_trusted_proxies(entries)
+        flash('Proxy settings saved. Visitors coming through them are now told apart.' if entries
+              else 'Proxy settings saved. No proxy is trusted.', 'success')
         return redirect(url_for('config') + '#security')

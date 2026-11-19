@@ -70,8 +70,9 @@ COPY logrotate/power-manager-logrotate /etc/logrotate.d/
 COPY logrotate/rsyslog /etc/logrotate.d/rsyslog
 
 # --- Rsyslog Setup ---
-# Note: The actual rsyslog config is mounted via docker-compose.yml
-# This Dockerfile only ensures the service is installed.
+# Note: optional log forwarding (rsyslog/custom.conf) is mounted via docker-compose.yml.
+# Keeps power manager lines out of /var/log/syslog; they're already in power_manager.log.
+COPY rsyslog/zz-skip-power-manager.conf /etc/rsyslog.d/
 
 # --- NUT Configuration ---
 RUN mkdir -p /var/run/nut && \

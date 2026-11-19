@@ -30,6 +30,12 @@ NOTIFY_KEYS = ('NOTIFY_POWER_FAIL', 'NOTIFY_POWER_RESTORED', 'NOTIFY_WOL_FAILURE
                'NOTIFY_CLIENT_SHUTDOWN', 'NOTIFY_CLIENT_STALE', 'NOTIFY_APP_ERROR',
                'NOTIFY_SIMULATION_MODE')
 
+# Single-choice settings that save the moment they're picked: allowed values
+# and the toast for each.
+CHOICES = {
+    'LOG_RETENTION_DAYS': (('3', '7', '14', '30'), 'Logs are now kept for {} days.'),
+}
+
 # Switches that save the moment they're flipped, and how the toast names them.
 SWITCH_LABELS = {
     'NOTIFY_POWER_FAIL': 'Power cut emails',
@@ -148,6 +154,15 @@ def register(app, gui):
         apply({key: 'true' if on else 'false'})
         return jsonify({'success': True, 'on': on,
                         'message': f"{SWITCH_LABELS[key]} {'on' if on else 'off'}."})
+
+    @app.route('/settings/choice', methods=['POST'])
+    def save_choice():
+        """One single-choice setting (a dropdown), saved the moment it's picked."""
+        key, value = request.form.get('name', ''), request.form.get('value', '')
+        if key not in CHOICES or value not in CHOICES[key][0]:
+            return jsonify({'success': False, 'message': "That setting can't be changed here."}), 400
+        apply({key: value})
+        return jsonify({'success': True, 'message': CHOICES[key][1].format(value)})
 
     @app.route('/schedule/<section>/enabled', methods=['POST'])
     def save_schedule_enabled(section):

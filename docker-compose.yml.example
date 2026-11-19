@@ -56,12 +56,13 @@ services:
       # Mount the log rotation configuration
       - ./logrotate/power-manager-logrotate:/etc/logrotate.d/power-manager-logrotate
 
-      # --- Custom Syslog Forwarding ---
-      # To enable forwarding syslog messages, copy the example file
-      # 'rsyslog/custom.conf.example' to 'rsyslog/custom.conf' and
-      # edit it with your server details. The container will automatically
-      # pick it up on restart.
-      - ./rsyslog/custom.conf:/etc/rsyslog.d/custom.conf      
+      # --- Custom Syslog Forwarding (optional) ---
+      # To forward syslog messages to another server, copy
+      # 'rsyslog/custom.conf.example' to 'rsyslog/custom.conf', edit it with
+      # your server details, then uncomment the line below.
+      # Leave it commented out otherwise: if the file doesn't exist, Docker
+      # creates an empty folder with that name in its place.
+      # - ./rsyslog/custom.conf:/etc/rsyslog.d/custom.conf
       
       # (Optional) Mount a volume for persistent logs. This is good practice.
       # It will create a 'logs' directory on your host machine.

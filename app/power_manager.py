@@ -15,6 +15,7 @@ from email.mime.text import MIMEText
 from email.utils import formataddr
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import client_status
 import config_store
 import reachability
 from battery_monitor import BatteryMonitor
@@ -1106,31 +1107,16 @@ class PowerManager:
 
     def _update_client_status_json(self, ip, status):
         """Update client status JSON with atomic writes and compatible format."""
-        statuses = {}
-        
-        try:
-            if os.path.exists(CLIENT_STATUS_FILE):
-                with open(CLIENT_STATUS_FILE, 'r') as f: 
-                    statuses = json.load(f)
-        except (IOError, json.JSONDecodeError) as e:
-            log.warning(f"Failed to read client status file: {e}")
-
         try:
             # Use timestamp format compatible with Web GUI expectations
             timestamp = datetime.utcnow().strftime('%Y-%m-%dT%H:%M:%SZ')
-            statuses[ip] = {
-                "status": status, 
+            # Takes turns with the API's heartbeat writes (see client_status).
+            client_status.update(CLIENT_STATUS_FILE, ip, {
+                "status": status,
                 "timestamp": timestamp,
                 "remaining_seconds": None,
                 "shutdown_delay": None
-            }
-            
-            # Use atomic write operation
-            temp_file = CLIENT_STATUS_FILE + ".tmp"
-            with open(temp_file, 'w') as f: 
-                json.dump(statuses, f, indent=2)
-            os.rename(temp_file, CLIENT_STATUS_FILE)
-                
+            })
         except (IOError, json.JSONDecodeError) as e:
             log.error(f"Failed to update client status file: {e}")
 
@@ -1696,11 +1682,22 @@ class PowerManager:
                         ts = ts.replace(tzinfo=None)
                     
                     time_diff = (now - ts).total_seconds()
-                    
-                    if time_diff > (stale_minutes * 60):
+
+                    # Stay quiet while the machine is expected to be off: during
+                    # a power cut (or test mode), and after it said it was
+                    # shutting down, until it's woken. A woken machine gets the
+                    # wake-up check time to start before it counts as stale.
+                    last_status = str(status_data.get('status', ''))
+                    expected_off = (self.power_state == "POWER_FAIL"
+                                    or last_status == 'shutdown_pending')
+                    allowed = stale_minutes * 60
+                    if last_status.startswith('wol_'):
+                        allowed = max(allowed, self._wol_confirm_timeout() * 60)
+
+                    if time_diff > allowed and not expected_off:
                         if not self.client_notification_states.get(stale_flag):
-                            self.notifier.send("CLIENT_STALE", "[UPS] WARNING: Client Stale", 
-                                             f"Client '{name}' ({ip}) has not reported for {stale_minutes}+ minutes.")
+                            self.notifier.send("CLIENT_STALE", "[UPS] WARNING: Client Stale",
+                                             f"Client '{name}' ({ip}) has not reported for {int(allowed // 60)}+ minutes.")
                             self.client_notification_states[stale_flag] = True
                     # wol_* statuses are written by this server, not reported by
                     # the client, so their fresh timestamp says nothing about
