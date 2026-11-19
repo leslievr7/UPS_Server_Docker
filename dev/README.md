@@ -12,6 +12,9 @@ python3 -m venv .venv && .venv/bin/pip install flask gunicorn pytest
 | Web GUI | http://127.0.0.1:8080/ |
 | Control panel (scenarios, pretend machines, recorded emails) | http://127.0.0.1:8080/dev |
 | UPS Hub API (token `sandbox-test-token`) | http://127.0.0.1:5050/ |
+| Web sign-in password (sandbox only) | `sandbox-admin` |
+
+To try the first-run "create a password" page, delete `dev/.sandbox/etc/nut/web_auth.json` and reload. The control panel at `/dev` needs no sign-in.
 
 ## Why it is harmless
 

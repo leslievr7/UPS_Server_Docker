@@ -68,6 +68,9 @@ CONFIG_PATH = os.path.join(PATHS['/etc/nut/'], 'power_manager.conf')
 
 # --- Sandbox folder ------------------------------------------------------
 
+SANDBOX_PASSWORD = 'sandbox-admin'  # test value, sandbox only
+
+
 def prepare_sandbox(reset):
     if reset and os.path.isdir(SANDBOX):
         shutil.rmtree(SANDBOX)
@@ -79,6 +82,18 @@ def prepare_sandbox(reset):
             template = f.read()
         with open(CONFIG_PATH, 'w') as f:
             f.write(template.replace('@SANDBOX@', SANDBOX))
+
+    # Sign-in for the sandbox only. The test password is documented in
+    # dev/README.md; delete this file to try the first-run setup page instead.
+    auth_file = os.path.join(PATHS['/etc/nut/'], 'web_auth.json')
+    if not os.path.exists(auth_file):
+        import json
+        import secrets
+        from werkzeug.security import generate_password_hash
+        with open(auth_file, 'w') as f:
+            json.dump({'secret_key': secrets.token_hex(32),
+                       'password_hash': generate_password_hash(SANDBOX_PASSWORD, method='pbkdf2:sha256:200000')},
+                      f, indent=2)
 
     ups_conf = os.path.join(PATHS['/etc/nut/'], 'ups.conf')
     if not os.path.exists(ups_conf):
@@ -604,6 +619,12 @@ def main():
     power_manager.log = sandbox_logging()
     power_manager.setup_logging = sandbox_logging
 
+    import web_auth
+    remap(web_auth)
+    # The sandbox control panel stays reachable without signing in (it only
+    # listens on 127.0.0.1 and changes nothing but the pretend world).
+    web_auth.PUBLIC_PREFIXES.append('sandbox_dev.')
+
     import web_gui
     remap(web_gui)
     # Pick up template edits without restarting the sandbox.
@@ -638,6 +659,7 @@ def main():
     print(f"Web GUI        : http://127.0.0.1:{WEB_PORT}/")
     print(f"Control panel  : http://127.0.0.1:{WEB_PORT}/dev")
     print(f"API            : http://127.0.0.1:{API_PORT}/ (token: {TOKEN})")
+    print(f"Web sign-in    : password '{SANDBOX_PASSWORD}' (sandbox only)")
     sys.stdout.flush()
 
     from werkzeug.serving import make_server

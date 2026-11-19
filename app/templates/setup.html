@@ -1,0 +1,35 @@
+{% extends "base.html" %}
+{% block title %}Create a password - UPS Server{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+  <div class="card auth-card">
+    <header>
+      <span class="auth-mark">{{ ui.icon('shield-check') }}</span>
+      <h2>Create an admin password</h2>
+      <p>This server's web pages are now protected. Choose the password you'll use to sign in.</p>
+    </header>
+    <section>
+      <form method="post" action="{{ url_for('setup') }}" class="stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <div class="field">
+          <label for="password">New password</label>
+          <input class="input" id="password" name="password" type="password" autocomplete="new-password"
+                 minlength="{{ min_length }}" required autofocus aria-describedby="password-hint">
+          <p id="password-hint">At least {{ min_length }} characters. A short phrase is easier to remember.</p>
+        </div>
+        <div class="field"{% if error %} data-invalid="true"{% endif %}>
+          <label for="confirm">Type it again</label>
+          <input class="input" id="confirm" name="confirm" type="password" autocomplete="new-password"
+                 required {% if error %}aria-invalid="true" aria-describedby="confirm-error"{% endif %}>
+          {% if error %}<p id="confirm-error" role="alert">{{ error }}</p>{% endif %}
+        </div>
+        <button type="submit" class="btn">Create password and sign in</button>
+      </form>
+    </section>
+    <footer>
+      <p class="muted xsmall">You'll stay signed in on this device for {{ 30 }} days. The UPS script on your machines uses its own token and isn't affected.</p>
+    </footer>
+  </div>
+</div>
+{% endblock %}

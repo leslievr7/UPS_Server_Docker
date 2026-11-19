@@ -26,6 +26,8 @@ from api import API_TOKEN, get_ups_name, get_server_ip, read_power_state
 from battery_monitor import BatteryMonitor
 from dashboard_view import build_dashboard
 import reachability
+import web_auth
+import web_settings
 
 # Import version information
 try:
@@ -42,7 +44,8 @@ except ImportError:
         return "development"
 
 app = Flask(__name__)
-app.secret_key = 'ups_server_gui_secret_key_change_in_production'
+# Sign-in, the session secret and CSRF protection live in web_auth.py.
+web_auth.init_app(app)
 
 
 @app.context_processor
@@ -424,9 +427,19 @@ def config():
     try:
         pm_config, wake_hosts, schedules = read_power_manager_config()
         ups_clients = get_ups_clients_from_wake_hosts(wake_hosts)
-        
+        # The email password never goes to the browser; the page only needs
+        # to know whether one is saved.
+        smtp_password_set = bool(pm_config.get('SMTP_PASSWORD'))
+        page_config = {k: v for k, v in pm_config.items() if k != 'SMTP_PASSWORD'}
+        # Machines that would act on test mode (protected and not ignoring it).
+        test_mode_acting = [h.get('NAME', s) for s, h in sorted(wake_hosts.items())
+                            if 'SHUTDOWN_DELAY_MINUTES' in h
+                            and h.get('IGNORE_SIMULATION', 'false') != 'true']
+
         return render_template('config.html',
-                             pm_config=pm_config,
+                             pm_config=page_config,
+                             smtp_password_set=smtp_password_set,
+                             test_mode_acting=test_mode_acting,
                              wake_hosts=wake_hosts,
                              ups_clients=ups_clients,
                              schedules=schedules,
@@ -442,109 +455,8 @@ def version_endpoint():
     """API endpoint to get version information"""
     return jsonify(get_version_info())
 
-# [Rest of the routes remain the same as in the original file]
-@app.route('/save_main_config', methods=['POST'])
-def save_main_config():
-    """Save main and SMTP power manager configuration"""
-    try:
-        pm_config, wake_hosts, schedules = read_power_manager_config()
-        
-        # --- Update main config ---
-        pm_config['SENTINEL_HOSTS'] = request.form.get('sentinel_hosts', '')
-        pm_config['WOL_DELAY_MINUTES'] = request.form.get('wol_delay_minutes', '5')
-        pm_config['WOL_CONFIRM_TIMEOUT_MINUTES'] = request.form.get('wol_confirm_timeout_minutes', '10')
-        pm_config['CLIENT_STALE_TIMEOUT_MINUTES'] = request.form.get('client_stale_timeout_minutes', '5')
-        pm_config['DEFAULT_BROADCAST_IP'] = request.form.get('default_broadcast_ip', '192.168.1.255')
-        pm_config['POWER_SIMULATION_MODE'] = 'true' if 'power_simulation_mode' in request.form else 'false'
-        pm_config['DEBUG_MODE'] = 'true' if 'debug_mode' in request.form else 'false'
-        if 'UPS_STATE_FILE' not in pm_config:
-            pm_config['UPS_STATE_FILE'] = request.form.get('ups_state_file', '/var/run/nut/virtual.device')
-
-        # --- Update battery monitor (VBM) integration ---
-        pm_config['BATTERY_ENABLED'] = 'true' if 'battery_enabled' in request.form else 'false'
-        pm_config['BATTERY_API_URL'] = request.form.get(
-            'battery_api_url', 'http://localhost:8088').strip()
-        pm_config['BATTERY_API_TIMEOUT'] = request.form.get('battery_api_timeout', '5')
-        pm_config['BATTERY_MAX_DATA_AGE'] = request.form.get('battery_max_data_age', '60')
-        pm_config['BATTERY_CAPACITY_AH'] = request.form.get('battery_capacity_ah', '0')
-        pm_config['BATTERY_DECISION_MODE'] = request.form.get('battery_decision_mode', 'observe')
-        pm_config['BATTERY_DEFAULT_POWER_SOURCE'] = request.form.get(
-            'battery_default_power_source', 'sentinel')
-
-        for form_field, config_key in (
-            ('battery_default_critical_voltage', 'BATTERY_DEFAULT_CRITICAL_VOLTAGE'),
-            ('battery_default_shutdown_voltage', 'BATTERY_DEFAULT_SHUTDOWN_VOLTAGE'),
-            ('battery_default_shutdown_soc', 'BATTERY_DEFAULT_SHUTDOWN_SOC'),
-            ('battery_default_min_runtime_minutes', 'BATTERY_DEFAULT_MIN_RUNTIME_MINUTES'),
-            ('battery_default_wol_min_soc', 'BATTERY_DEFAULT_WOL_MIN_SOC'),
-        ):
-            pm_config[config_key] = request.form.get(form_field, '').strip()
-
-        pm_config['BATTERY_SIMULATION'] = 'true' if 'battery_simulation' in request.form else 'false'
-        for form_field, config_key in (
-            ('battery_sim_ac_power', 'BATTERY_SIM_AC_POWER'),
-            ('battery_sim_soc', 'BATTERY_SIM_SOC'),
-            ('battery_sim_voltage', 'BATTERY_SIM_VOLTAGE'),
-            ('battery_sim_current', 'BATTERY_SIM_CURRENT'),
-            ('battery_sim_remaining', 'BATTERY_SIM_REMAINING'),
-        ):
-            pm_config[config_key] = request.form.get(form_field, '').strip()
-
-        # --- Update SMTP config ---
-        pm_config['SMTP_SERVER'] = request.form.get('smtp_server', '')
-        pm_config['SMTP_PORT'] = request.form.get('smtp_port', '')
-        pm_config['SMTP_USER'] = request.form.get('smtp_user', '')
-        pm_config['SMTP_PASSWORD'] = request.form.get('smtp_password', '')
-        pm_config['SMTP_SENDER_NAME'] = request.form.get('smtp_sender_name', '')
-        pm_config['SMTP_SENDER_EMAIL'] = request.form.get('smtp_sender_email', '')
-        pm_config['SMTP_RECIPIENTS'] = request.form.get('smtp_recipients', '')
-        pm_config['SMTP_USE_TLS'] = request.form.get('smtp_use_tls', 'auto')  # New field
-
-        # --- Update Notification settings ---
-        notify_keys = [
-            'notify_power_fail', 'notify_power_restored', 'notify_client_shutdown',
-            'notify_client_stale', 'notify_app_error', 'notify_simulation_mode',
-            'notify_wol_failure'
-        ]
-        for key in notify_keys:
-            # Convert to uppercase for the config file
-            config_key = key.upper() 
-            pm_config[config_key] = 'true' if key in request.form else 'false'
-
-        # --- Validation ---
-        sentinel_ips = pm_config['SENTINEL_HOSTS'].split()
-        for ip in sentinel_ips:
-            if ip and not validate_ip(ip):
-                flash(f'Invalid IP address in Sentinel Hosts: {ip}', 'error')
-                return redirect(url_for('config'))
-        
-        if not validate_ip(pm_config['DEFAULT_BROADCAST_IP']):
-            flash('Invalid Default Broadcast IP address', 'error')
-            return redirect(url_for('config'))
-
-        if pm_config['BATTERY_ENABLED'] == 'true':
-            battery_url = pm_config['BATTERY_API_URL']
-            if not battery_url.startswith(('http://', 'https://')):
-                flash('Battery Monitor URL must start with http:// or https://', 'error')
-                return redirect(url_for('config'))
-
-        if pm_config.get('SMTP_RECIPIENTS') and not validate_email_list(pm_config['SMTP_RECIPIENTS']):
-             flash('Invalid email address format in Recipients field.', 'error')
-             return redirect(url_for('config'))
-        
-        if pm_config.get('SMTP_SENDER_EMAIL') and not validate_email_list(pm_config['SMTP_SENDER_EMAIL']):
-             flash('Invalid email address format in Sender Email field.', 'error')
-             return redirect(url_for('config'))
-
-        # --- Write the combined configuration ---
-        write_power_manager_config(pm_config, wake_hosts, schedules)
-        flash('Configuration saved successfully!', 'success')
-        
-    except Exception as e:
-        flash(f'Error saving configuration: {str(e)}', 'error')
-    
-    return redirect(url_for('config'))
-
+# Settings saves, one per tab, live in web_settings.py.
+web_settings.register(app, sys.modules[__name__])
 
 @app.route('/test_smtp', methods=['POST'])
 def test_smtp():
@@ -559,14 +471,14 @@ def test_smtp():
         success, message = send_email(subject, body, pm_config)
         
         if success:
-            flash(f'Test email sent successfully to {pm_config.get("SMTP_RECIPIENTS")}!', 'success')
+            flash(f'Test email sent to {pm_config.get("SMTP_RECIPIENTS")}.', 'success')
         else:
-            flash(f'Failed to send test email: {message}', 'error')
+            flash(f"Couldn't send the test email: {message}", 'error')
             
     except Exception as e:
         flash(f'An unexpected error occurred: {str(e)}', 'error')
         
-    return redirect(url_for('config'))
+    return redirect(url_for('config') + '#notifications')
 
 
 def apply_battery_host_fields(host):
@@ -624,17 +536,17 @@ def add_wake_host():
         ignore_simulation = 'true' if 'ignore_simulation' in request.form else 'false'
         
         if not all([name, ip, mac]):
-            flash('Name, IP, and MAC address are required', 'error')
-            return redirect(url_for('config'))
+            flash('Name, IP address and MAC address are all needed.', 'error')
+            return redirect(url_for('config') + '#machines')
         if not validate_ip(ip):
             flash(f'Invalid IP address: {ip}', 'error')
-            return redirect(url_for('config'))
+            return redirect(url_for('config') + '#machines')
         if not validate_mac(mac):
             flash(f'Invalid MAC address: {mac}', 'error')
-            return redirect(url_for('config'))
+            return redirect(url_for('config') + '#machines')
         if broadcast_ip and not validate_ip(broadcast_ip):
             flash(f'Invalid broadcast IP address: {broadcast_ip}', 'error')
-            return redirect(url_for('config'))
+            return redirect(url_for('config') + '#machines')
         
         # Add new wake host
         wake_hosts[section_name] = {'NAME': name, 'IP': ip, 'MAC': mac, 'AUTO_WOL': auto_wol, 'IGNORE_SIMULATION': ignore_simulation}
@@ -645,12 +557,12 @@ def add_wake_host():
         apply_battery_host_fields(wake_hosts[section_name])
 
         write_power_manager_config(pm_config, wake_hosts, schedules)
-        flash(f'Host "{name}" added successfully!', 'success')
+        flash(f'Added {name}.', 'success')
         
     except Exception as e:
         flash(f'Error adding host: {str(e)}', 'error')
     
-    return redirect(url_for('config'))
+    return redirect(url_for('config') + '#machines')
 
 @app.route('/edit_wake_host/<section>', methods=['POST'])
 def edit_wake_host(section):
@@ -659,8 +571,8 @@ def edit_wake_host(section):
         pm_config, wake_hosts, schedules = read_power_manager_config()
         
         if section not in wake_hosts:
-            flash('Host not found', 'error')
-            return redirect(url_for('config'))
+            flash("That machine doesn't exist any more.", 'error')
+            return redirect(url_for('config') + '#machines')
         
         # Get form data and validate
         name = request.form.get('name', '').strip()
@@ -672,17 +584,17 @@ def edit_wake_host(section):
         ignore_simulation = 'true' if 'ignore_simulation' in request.form else 'false'
 
         if not all([name, ip, mac]):
-            flash('Name, IP, and MAC address are required.', 'error')
-            return redirect(url_for('config'))
+            flash('Name, IP address and MAC address are all needed.', 'error')
+            return redirect(url_for('config') + '#machines')
         if not validate_ip(ip):
             flash(f'Invalid IP address: {ip}', 'error')
-            return redirect(url_for('config'))
+            return redirect(url_for('config') + '#machines')
         if not validate_mac(mac):
             flash(f'Invalid MAC address: {mac}', 'error')
-            return redirect(url_for('config'))
+            return redirect(url_for('config') + '#machines')
         if broadcast_ip and not validate_ip(broadcast_ip):
             flash(f'Invalid broadcast IP address: {broadcast_ip}', 'error')
-            return redirect(url_for('config'))
+            return redirect(url_for('config') + '#machines')
         
         # Update wake host data
         wake_hosts[section]['NAME'] = name
@@ -704,12 +616,12 @@ def edit_wake_host(section):
         apply_battery_host_fields(wake_hosts[section])
 
         write_power_manager_config(pm_config, wake_hosts, schedules)
-        flash(f'Host "{name}" updated successfully!', 'success')
+        flash(f'Saved {name}.', 'success')
         
     except Exception as e:
         flash(f'Error updating host: {str(e)}', 'error')
     
-    return redirect(url_for('config'))
+    return redirect(url_for('config') + '#machines')
 
 @app.route('/delete_wake_host/<section>', methods=['POST'])
 def delete_wake_host(section):
@@ -721,14 +633,37 @@ def delete_wake_host(section):
             name = wake_hosts[section].get('NAME', section)
             del wake_hosts[section]
             write_power_manager_config(pm_config, wake_hosts, schedules)
-            flash(f'Host "{name}" deleted successfully!', 'success')
+            flash(f'Deleted {name}.', 'success')
         else:
-            flash('Host not found', 'error')
+            flash("That machine doesn't exist any more.", 'error')
         
     except Exception as e:
         flash(f'Error deleting host: {str(e)}', 'error')
     
-    return redirect(url_for('config'))
+    return redirect(url_for('config') + '#machines')
+
+DAYS = ('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday')
+
+
+def schedule_problem():
+    """A plain-words reason the submitted schedule can't be saved, or None."""
+    form = request.form
+    if not form.get('name', '').strip():
+        return 'Give the schedule a name.'
+    if not re.match(r'^([01]\d|2[0-3]):[0-5]\d$', form.get('time', '')):
+        return 'Pick a time.'
+    if form.get('action') not in ('start', 'stop'):
+        return 'Choose whether it turns test mode on or off.'
+    if form.get('type') == 'one-time':
+        if not re.match(r'^\d{4}-\d{2}-\d{2}$', form.get('date', '')):
+            return 'Pick a date.'
+    elif form.get('type') == 'recurring':
+        if form.get('day_of_week') not in DAYS:
+            return 'Pick a day of the week.'
+    else:
+        return 'Choose one-time or weekly.'
+    return None
+
 
 @app.route('/add_schedule', methods=['POST'])
 def add_schedule():
@@ -740,6 +675,11 @@ def add_schedule():
         next_num = max(existing_numbers) + 1 if existing_numbers else 1
         section_name = f"SCHEDULE_{next_num}"
         
+        problem = schedule_problem()
+        if problem:
+            flash(problem + ' Nothing was saved.', 'error')
+            return redirect(url_for('config') + '#schedules')
+
         new_schedule = {
             'NAME': request.form.get('name'),
             'TYPE': request.form.get('type'),
@@ -755,12 +695,12 @@ def add_schedule():
         
         schedules[section_name] = new_schedule
         write_power_manager_config(pm_config, wake_hosts, schedules)
-        flash(f'Schedule "{new_schedule["NAME"]}" added successfully!', 'success')
+        flash(f'Added the schedule {new_schedule["NAME"]}.', 'success')
 
     except Exception as e:
         flash(f'Error adding schedule: {str(e)}', 'error')
         
-    return redirect(url_for('config'))
+    return redirect(url_for('config') + '#schedules')
 
 @app.route('/edit_schedule/<section>', methods=['POST'])
 def edit_schedule(section):
@@ -768,9 +708,14 @@ def edit_schedule(section):
     try:
         pm_config, wake_hosts, schedules = read_power_manager_config()
         if section not in schedules:
-            flash('Schedule not found', 'error')
-            return redirect(url_for('config'))
+            flash("That schedule doesn't exist any more.", 'error')
+            return redirect(url_for('config') + '#schedules')
             
+        problem = schedule_problem()
+        if problem:
+            flash(problem + ' Nothing was saved.', 'error')
+            return redirect(url_for('config') + '#schedules')
+
         updated_schedule = {
             'NAME': request.form.get('name'),
             'TYPE': request.form.get('type'),
@@ -790,12 +735,12 @@ def edit_schedule(section):
 
         schedules[section].update(updated_schedule)
         write_power_manager_config(pm_config, wake_hosts, schedules)
-        flash(f'Schedule "{updated_schedule["NAME"]}" updated successfully!', 'success')
+        flash(f'Saved the schedule {updated_schedule["NAME"]}.', 'success')
         
     except Exception as e:
         flash(f'Error updating schedule: {str(e)}', 'error')
 
-    return redirect(url_for('config'))
+    return redirect(url_for('config') + '#schedules')
 
 @app.route('/delete_schedule/<section>', methods=['POST'])
 def delete_schedule(section):
@@ -806,16 +751,16 @@ def delete_schedule(section):
             name = schedules[section].get('NAME', section)
             del schedules[section]
             write_power_manager_config(pm_config, wake_hosts, schedules)
-            flash(f'Schedule "{name}" deleted successfully!', 'success')
+            flash(f'Deleted the schedule {name}.', 'success')
         else:
-            flash('Schedule not found', 'error')
+            flash("That schedule doesn't exist any more.", 'error')
     
     except Exception as e:
         flash(f'Error deleting schedule: {str(e)}', 'error')
         
-    return redirect(url_for('config'))
+    return redirect(url_for('config') + '#schedules')
 
-@app.route('/wol/<section>')
+@app.route('/wol/<section>', methods=['POST'])
 def wake_host(section):
     """Send Wake-on-LAN to specific host"""
     try:
@@ -917,7 +862,7 @@ def test_battery_connection():
             'success',
         )
 
-    return redirect(url_for('config'))
+    return redirect(url_for('config') + '#battery')
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=80, debug=True)

@@ -5,6 +5,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta name="color-scheme" content="light dark">
+  {# Sent back with every fetch() that changes something (see web_auth.py). #}
+  <meta name="csrf-token" content="{{ csrf_token() }}">
   <title>{% block title %}UPS Server{% endblock %}</title>
   <script>
     /* Apply the saved theme before the page paints, so there is no white flash. */
@@ -30,6 +32,7 @@
         <span class="brand-name">UPS Server</span>
       </a>
 
+      {% if signed_in %}
       <nav class="app-nav" aria-label="Main">
         <a href="{{ url_for('index') }}" {% if active == 'index' %}aria-current="page"{% endif %}>
           {{ ui.icon('layout-dashboard') }}<span>Dashboard</span>
@@ -38,9 +41,17 @@
           {{ ui.icon('settings') }}<span>Settings</span>
         </a>
       </nav>
+      {% endif %}
 
       <div class="header-actions">
         {% block header_actions %}{% endblock %}
+        {% if signed_in %}
+        <form method="post" action="{{ url_for('logout') }}" class="logout-form">
+          <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+          <button type="submit" class="btn" data-variant="ghost" data-size="icon" aria-label="Log out"
+                  data-tooltip="Log out" data-side="bottom" data-align="end">{{ ui.icon('log-out') }}</button>
+        </form>
+        {% endif %}
         <div id="theme-menu" class="dropdown-menu">
           <button type="button" id="theme-menu-trigger" class="btn" data-variant="ghost" data-size="icon"
                   aria-haspopup="menu" aria-controls="theme-menu-menu" aria-expanded="false" aria-label="Colour theme">

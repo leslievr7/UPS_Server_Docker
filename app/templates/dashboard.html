@@ -76,6 +76,7 @@
     pending = true;
     fetch('/dashboard/live', { headers: { 'X-Requested-With': 'fetch' }, cache: 'no-store' })
       .then(function (r) {
+        if (r.status === 401) { window.location.reload(); throw new Error('signed out'); }
         if (!r.ok) throw new Error('HTTP ' + r.status);
         var checked = r.headers.get('X-Checked-At');
         if (r.headers.get('X-Watch-Stale') === '1') {
@@ -156,8 +157,15 @@
   document.getElementById('wake-confirm').addEventListener('click', function () {
     dialog.close();
     if (!wakeSection) return;
-    fetch('/wol/' + encodeURIComponent(wakeSection))
-      .then(function (r) { return r.json(); })
+    var csrf = document.querySelector('meta[name="csrf-token"]').content;
+    fetch('/wol/' + encodeURIComponent(wakeSection), {
+      method: 'POST',
+      headers: { 'X-CSRF-Token': csrf, 'X-Requested-With': 'fetch' }
+    })
+      .then(function (r) {
+        if (r.status === 401) { window.location.reload(); throw new Error('signed out'); }
+        return r.json();
+      })
       .then(function (data) {
         toast(data.success ? 'success' : 'error', data.message,
               data.success ? 'It should answer within a minute or two.' : '');

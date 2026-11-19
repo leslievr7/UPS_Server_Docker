@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Sign in - UPS Server{% endblock %}
+
+{% block content %}
+<div class="auth-wrap">
+  <div class="card auth-card">
+    <header>
+      <span class="auth-mark">{{ ui.icon('lock') }}</span>
+      <h2>Sign in</h2>
+      <p>Enter the admin password for this UPS server.</p>
+    </header>
+    <section>
+      <form method="post" action="{{ url_for('login') }}" class="stack">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="next" value="{{ next }}">
+        <div class="field"{% if error %} data-invalid="true"{% endif %}>
+          <label for="password">Password</label>
+          <input class="input" id="password" name="password" type="password" autocomplete="current-password"
+                 required autofocus {% if error %}aria-invalid="true" aria-describedby="password-error"{% endif %}>
+          {% if error %}<p id="password-error" role="alert">{{ error }}</p>{% endif %}
+        </div>
+        <button type="submit" class="btn">Sign in</button>
+      </form>
+    </section>
+    <footer>
+      <p class="muted xsmall">Forgot it? Delete <code>web_auth.json</code> next to <code>power_manager.conf</code> on the server, then reload this page to create a new one.</p>
+    </footer>
+  </div>
+</div>
+{% endblock %}

@@ -1,1033 +1,758 @@
-{% extends "base_legacy.html" %}
+{% extends "base.html" %}
+{% block title %}Settings - UPS Server{% endblock %}
 
-{% block title %}Configuration - UPS Power Management Server{% endblock %}
+{% set c = pm_config %}
+{% set battery_on = c.get('BATTERY_ENABLED') == 'true' %}
+{% set test_mode_on = c.get('POWER_SIMULATION_MODE') == 'true' %}
+
+{# A switch row: title, optional help, and the switch itself. #}
+{% macro switch(name, title, help=None, checked=False, id=None) -%}
+<label class="field setting-switch" data-orientation="horizontal">
+  <section>
+    <h3>{{ title }}</h3>
+    {% if help %}<p class="muted small">{{ help }}</p>{% endif %}
+  </section>
+  <input type="checkbox" role="switch" class="input" name="{{ name }}" value="true" id="{{ id or name }}" {% if checked %}checked{% endif %}>
+</label>
+{%- endmacro %}
+
+{% macro csrf() %}<input type="hidden" name="csrf_token" value="{{ csrf_token() }}">{% endmacro %}
 
 {% block content %}
-<div class="row">
-    <div class="col-12 mb-4">
-        <h2><i class="fas fa-cog me-2"></i>System Configuration</h2>
-    </div>
+<div class="page-header">
+  <div>
+    <h1>Settings</h1>
+    <p>Saved changes are picked up within 15 seconds.</p>
+  </div>
 </div>
 
-<form method="POST" action="{{ url_for('save_main_config') }}">
-	<div class="config-section">
-	   <h4 class="section-title"><i class="fas fa-sliders-h me-2"></i>Main Configuration</h4>
-	   <div class="row">
-		  <div class="col-md-6 mb-3">
-			 <label for="sentinel_hosts" class="form-label">Sentinel Hosts (IP addresses separated by spaces)</label>
-			 <textarea class="form-control" id="sentinel_hosts" name="sentinel_hosts" rows="3" placeholder="192.168.1.11 192.168.1.12 192.168.1.13">{{ pm_config.get('SENTINEL_HOSTS', '') }}</textarea>
-			 <div class="form-text">List of IP addresses of devices connected to grid power (not UPS) used to monitor power availability.</div>
-		  </div>
-		  <div class="col-md-6 mb-3">
-			 <label for="wol_delay_minutes" class="form-label">Wake-on-LAN Delay (minutes)</label>
-			 <input type="number" class="form-control" id="wol_delay_minutes" name="wol_delay_minutes" min="1" max="60" value="{{ pm_config.get('WOL_DELAY_MINUTES', '5') }}">
-			 <div class="form-text">Time to wait after power restoration before sending Wake-on-LAN signals.</div>
-		  </div>
-	   </div>
-	   <div class="row">
-		  <div class="col-md-6 mb-3">
-			 <label for="default_broadcast_ip" class="form-label">Default Broadcast Address</label>
-			 <input type="text" class="form-control" id="default_broadcast_ip" name="default_broadcast_ip" placeholder="192.168.1.255" value="{{ pm_config.get('DEFAULT_BROADCAST_IP', '192.168.1.255') }}">
-			 <div class="form-text">Broadcast address used for sending Wake-on-LAN packets.</div>
-		  </div>
-		  <div class="col-md-6 mb-3">
-			 <label for="client_stale_timeout_minutes" class="form-label">Client Stale Timeout (minutes)</label>
-			 <input type="number" class="form-control" id="client_stale_timeout_minutes" name="client_stale_timeout_minutes" min="1" max="60" value="{{ pm_config.get('CLIENT_STALE_TIMEOUT_MINUTES', '5') }}">
-			 <div class="form-text">Time after which a client is considered "stale" if it stops reporting its status.</div>
-		  </div>
-	   </div>
-	   <div class="row">
-		  <div class="col-md-6 mb-3">
-			 <label for="ups_state_file" class="form-label">UPS State File</label>
-			 <input type="text" class="form-control" id="ups_state_file" name="ups_state_file" value="{{ pm_config.get('UPS_STATE_FILE', '/var/run/nut/virtual.device') }}" readonly>
-			 <div class="form-text">Path to the virtual UPS device state file (read-only).</div>
-		  </div>
-		  <div class="col-md-6 mb-3">
-			 <div class="form-check form-switch mb-2">
-				<input class="form-check-input" type="checkbox" id="power_simulation_mode" name="power_simulation_mode" value="true" {% if pm_config.get('POWER_SIMULATION_MODE') == 'true' %}checked{% endif %}>
-				<label class="form-check-label" for="power_simulation_mode">Enable Power Outage Simulation</label>
-			 </div>
-			 <div class="form-text mb-3">Forces the UPS status to "On Battery, Low Battery" to test client shutdown procedures.</div>
-			 <div class="form-check form-switch">
-				<input class="form-check-input" type="checkbox" id="debug_mode" name="debug_mode" value="true" {% if pm_config.get('DEBUG_MODE') == 'true' %}checked{% endif %}>
-				<label class="form-check-label" for="debug_mode">Enable Debug Logging</label>
-			 </div>
-			 <div class="form-text">Enables detailed DEBUG-level logging for troubleshooting (increases log verbosity).</div>
-		  </div>
-	   </div>
-	   <div class="row">
-		  <div class="col-md-6 mb-3">
-			 <label for="wol_confirm_timeout_minutes" class="form-label">Wake-on-LAN Confirmation Timeout (minutes)</label>
-			 <input type="number" class="form-control" id="wol_confirm_timeout_minutes" name="wol_confirm_timeout_minutes" min="0" max="120" value="{{ pm_config.get('WOL_CONFIRM_TIMEOUT_MINUTES', '10') }}">
-			 <div class="form-text">How long a woken host has to answer a ping before it is reported as not waking up and sent one more packet. 0 disables the check.</div>
-		  </div>
-	   </div>
-	</div>
-
-    <div class="config-section">
-        <h4 class="section-title"><i class="fas fa-envelope me-2"></i>Email Notifications (SMTP)</h4>
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <label for="smtp_server" class="form-label">SMTP Server Address</label>
-                <input type="text" class="form-control" id="smtp_server" name="smtp_server" placeholder="smtp.example.com" value="{{ pm_config.get('SMTP_SERVER', '') }}">
-            </div>
-            <div class="col-md-6 mb-3">
-                <label for="smtp_port" class="form-label">SMTP Port</label>
-                <input type="number" class="form-control" id="smtp_port" name="smtp_port" placeholder="587" value="{{ pm_config.get('SMTP_PORT', '') }}">
-                <div class="form-text">Common ports: 25, 26, 465 (SSL), 587 (TLS).</div>
-            </div>
-        </div>
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <label for="smtp_use_tls" class="form-label">Use STARTTLS</label>
-                <select class="form-select" id="smtp_use_tls" name="smtp_use_tls">
-                    <option value="auto" {% if pm_config.get('SMTP_USE_TLS', 'auto') == 'auto' %}selected{% endif %}>Auto (recommended)</option>
-                    <option value="true" {% if pm_config.get('SMTP_USE_TLS') == 'true' %}selected{% endif %}>Always use STARTTLS</option>
-                    <option value="false" {% if pm_config.get('SMTP_USE_TLS') == 'false' %}selected{% endif %}>Never use STARTTLS</option>
-                </select>
-                <div class="form-text">
-                    <strong>Auto:</strong> Use STARTTLS on all ports except 26<br>
-                    <strong>Always:</strong> Always attempt STARTTLS (except port 465)<br>
-                    <strong>Never:</strong> Never use STARTTLS (for unsupported servers)
-                </div>
-            </div>
-            <div class="col-md-6 mb-3">
-                <!-- Puste pole dla zachowania symetrii -->
-            </div>
-        </div>
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <label for="smtp_user" class="form-label">Username (optional)</label>
-                <input type="text" class="form-control" id="smtp_user" name="smtp_user" placeholder="user@example.com" value="{{ pm_config.get('SMTP_USER', '') }}">
-            </div>
-            <div class="col-md-6 mb-3">
-                <label for="smtp_password" class="form-label">Password (optional)</label>
-                <input type="password" class="form-control" id="smtp_password" name="smtp_password" value="{{ pm_config.get('SMTP_PASSWORD', '') }}">
-            </div>
-        </div>
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <label for="smtp_sender_name" class="form-label">Sender Name</label>
-                <input type="text" class="form-control" id="smtp_sender_name" name="smtp_sender_name" placeholder="UPS Server" value="{{ pm_config.get('SMTP_SENDER_NAME', '') }}">
-            </div>
-            <div class="col-md-6 mb-3">
-                <label for="smtp_sender_email" class="form-label">Sender Email</label>
-                <input type="email" class="form-control" id="smtp_sender_email" name="smtp_sender_email" placeholder="ups@example.com" value="{{ pm_config.get('SMTP_SENDER_EMAIL', '') }}">
-            </div>
-        </div>
-        <div class="row">
-            <div class="col-12 mb-3">
-                <label for="smtp_recipients" class="form-label">Recipients</label>
-                <input type="text" class="form-control" id="smtp_recipients" name="smtp_recipients" placeholder="admin1@example.com,admin2@example.com" value="{{ pm_config.get('SMTP_RECIPIENTS', '') }}">
-                <div class="form-text">Comma-separated list of email addresses.</div>
-            </div>
-        </div>
-    </div>
-    
-    <div class="config-section">
-        <h4 class="section-title"><i class="fas fa-car-battery me-2"></i>Battery Monitor (Victron)</h4>
-        <p class="text-muted">
-            Optional integration with a
-            <a href="https://github.com/MarekWo/victron-bm-webui" target="_blank" rel="noopener">victron-bm-webui</a>
-            instance. It supplies real battery data (voltage, current, state of charge, estimated
-            runtime) and a direct answer to "is mains actually gone?" &mdash; so a network outage
-            that takes all sentinel hosts offline no longer looks like a power failure.
-            If the service is unreachable or its readings go stale, the server silently falls
-            back to sentinel-based detection.
-        </p>
-        <div class="form-check form-switch mb-2">
-            <input class="form-check-input" type="checkbox" id="battery_enabled" name="battery_enabled" value="true" {% if pm_config.get('BATTERY_ENABLED') == 'true' %}checked{% endif %}>
-            <label class="form-check-label" for="battery_enabled">Enable Battery Monitor Integration</label>
-        </div>
-        <div class="form-text mb-3">When disabled, nothing changes &mdash; the server uses sentinel hosts only.</div>
-
-        {# Everything below is only relevant once the integration is on. Values
-           stay in the form while hidden, so toggling off and on does not lose
-           anything the administrator has already configured. #}
-        <div id="battery-settings">
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <label for="battery_api_url" class="form-label">Battery Monitor URL</label>
-                <input type="text" class="form-control" id="battery_api_url" name="battery_api_url" placeholder="http://localhost:8088" value="{{ pm_config.get('BATTERY_API_URL', 'http://localhost:8088') }}">
-                <div class="form-text">Base URL of the victron-bm-webui instance.</div>
-            </div>
-            <div class="col-md-3 mb-3">
-                <label for="battery_api_timeout" class="form-label">Timeout (s)</label>
-                <input type="number" class="form-control" id="battery_api_timeout" name="battery_api_timeout" min="1" max="30" value="{{ pm_config.get('BATTERY_API_TIMEOUT', '5') }}">
-            </div>
-            <div class="col-md-3 mb-3">
-                <label for="battery_max_data_age" class="form-label">Max Data Age (s)</label>
-                <input type="number" class="form-control" id="battery_max_data_age" name="battery_max_data_age" min="15" max="600" value="{{ pm_config.get('BATTERY_MAX_DATA_AGE', '60') }}">
-                <div class="form-text">Older readings are rejected.</div>
-            </div>
-        </div>
-        <div class="row">
-            <div class="col-md-6 mb-3">
-                <label for="battery_decision_mode" class="form-label">Decision Mode</label>
-                <select class="form-select" id="battery_decision_mode" name="battery_decision_mode">
-                    <option value="observe" {% if pm_config.get('BATTERY_DECISION_MODE', 'observe') != 'enforce' %}selected{% endif %}>Observe &mdash; calculate and log only</option>
-                    <option value="enforce" {% if pm_config.get('BATTERY_DECISION_MODE') == 'enforce' %}selected{% endif %}>Enforce &mdash; battery rules decide shutdowns</option>
-                </select>
-                <div class="form-text">
-                    In <strong>Observe</strong> mode the battery rules run in full and appear on the dashboard
-                    and in the log, but clients are still told what the sentinel hosts imply &mdash; nothing shuts
-                    down differently. Watch for <code>SOURCE DISAGREEMENT</code> entries in the log for a few days
-                    before switching to <strong>Enforce</strong>.
-                </div>
-            </div>
-            <div class="col-md-6 mb-3">
-                <label for="battery_default_power_source" class="form-label">Default Power Source</label>
-                <select class="form-select" id="battery_default_power_source" name="battery_default_power_source">
-                    <option value="sentinel" {% if pm_config.get('BATTERY_DEFAULT_POWER_SOURCE', 'sentinel') == 'sentinel' %}selected{% endif %}>Sentinel hosts only</option>
-                    <option value="battery" {% if pm_config.get('BATTERY_DEFAULT_POWER_SOURCE') == 'battery' %}selected{% endif %}>Battery monitor</option>
-                    <option value="both" {% if pm_config.get('BATTERY_DEFAULT_POWER_SOURCE') == 'both' %}selected{% endif %}>Both must agree</option>
-                </select>
-                <div class="form-text">Used by hosts that do not choose a source themselves.</div>
-            </div>
-        </div>
-
-        <div class="row">
-            <div class="col-md-4 mb-3">
-                <label for="battery_capacity_ah" class="form-label">Bank Capacity (Ah)</label>
-                <input type="number" step="1" min="0" class="form-control" id="battery_capacity_ah" name="battery_capacity_ah" value="{{ pm_config.get('BATTERY_CAPACITY_AH', '0') }}">
-                <div class="form-text">
-                    Usable capacity of the bank. Turns state of charge into minutes, so the
-                    dashboard and the Min Runtime rule can count down to <strong>your</strong>
-                    shutdown threshold. A BMV counts down to the discharge floor set in the
-                    gauge instead, and reports nothing once past it. Leave at 0 to keep using
-                    the gauge's own estimate.
-                </div>
-            </div>
-        </div>
-
-        <h5 class="mt-3"><i class="fas fa-gauge-high text-primary me-2"></i>Default Battery Thresholds</h5>
-        <p class="text-muted">Applied to any host that does not override them individually.</p>
-        <div class="row">
-            <div class="col-md-2 mb-3">
-                <label for="battery_default_critical_voltage" class="form-label">Critical Voltage (V)</label>
-                <input type="number" step="0.1" class="form-control" id="battery_default_critical_voltage" name="battery_default_critical_voltage" value="{{ pm_config.get('BATTERY_DEFAULT_CRITICAL_VOLTAGE', '11.0') }}">
-            </div>
-            <div class="col-md-2 mb-3">
-                <label for="battery_default_shutdown_voltage" class="form-label">Shutdown Voltage (V)</label>
-                <input type="number" step="0.1" class="form-control" id="battery_default_shutdown_voltage" name="battery_default_shutdown_voltage" value="{{ pm_config.get('BATTERY_DEFAULT_SHUTDOWN_VOLTAGE', '11.4') }}">
-            </div>
-            <div class="col-md-2 mb-3">
-                <label for="battery_default_shutdown_soc" class="form-label">Shutdown SoC (%)</label>
-                <input type="number" step="1" min="0" max="100" class="form-control" id="battery_default_shutdown_soc" name="battery_default_shutdown_soc" value="{{ pm_config.get('BATTERY_DEFAULT_SHUTDOWN_SOC', '25') }}">
-            </div>
-            <div class="col-md-3 mb-3">
-                <label for="battery_default_min_runtime_minutes" class="form-label">Min Runtime (min)</label>
-                <input type="number" step="1" min="0" class="form-control" id="battery_default_min_runtime_minutes" name="battery_default_min_runtime_minutes" value="{{ pm_config.get('BATTERY_DEFAULT_MIN_RUNTIME_MINUTES', '0') }}">
-                <div class="form-text">0 disables this rule.</div>
-            </div>
-            <div class="col-md-3 mb-3">
-                <label for="battery_default_wol_min_soc" class="form-label">WoL Min SoC (%)</label>
-                <input type="number" step="1" min="0" max="100" class="form-control" id="battery_default_wol_min_soc" name="battery_default_wol_min_soc" value="{{ pm_config.get('BATTERY_DEFAULT_WOL_MIN_SOC', '0') }}">
-                <div class="form-text">0 disables the gate.</div>
-            </div>
-        </div>
-
-        <h5 class="mt-3"><i class="fas fa-flask text-warning me-2"></i>Battery Simulation (testing)</h5>
-        <p class="text-muted">
-            Overlays fixed values on top of the real reading, so shutdown thresholds can be
-            exercised without actually draining the battery. Leave a field empty to keep the
-            real value. Independent of Power Outage Simulation above.
-        </p>
-        <div class="row">
-            <div class="col-md-2 mb-3">
-                <div class="form-check form-switch mb-2">
-                    <input class="form-check-input" type="checkbox" id="battery_simulation" name="battery_simulation" value="true" {% if pm_config.get('BATTERY_SIMULATION') == 'true' %}checked{% endif %}>
-                    <label class="form-check-label" for="battery_simulation">Enable</label>
-                </div>
-            </div>
-            <div class="col-md-2 mb-3">
-                <label for="battery_sim_ac_power" class="form-label">Mains present</label>
-                <select class="form-select" id="battery_sim_ac_power" name="battery_sim_ac_power">
-                    <option value="" {% if not pm_config.get('BATTERY_SIM_AC_POWER') %}selected{% endif %}>(real value)</option>
-                    <option value="true" {% if pm_config.get('BATTERY_SIM_AC_POWER') == 'true' %}selected{% endif %}>true</option>
-                    <option value="false" {% if pm_config.get('BATTERY_SIM_AC_POWER') == 'false' %}selected{% endif %}>false</option>
-                </select>
-            </div>
-            <div class="col-md-2 mb-3">
-                <label for="battery_sim_soc" class="form-label">SoC (%)</label>
-                <input type="number" step="0.1" min="0" max="100" class="form-control" id="battery_sim_soc" name="battery_sim_soc" value="{{ pm_config.get('BATTERY_SIM_SOC', '') }}">
-            </div>
-            <div class="col-md-2 mb-3">
-                <label for="battery_sim_voltage" class="form-label">Voltage (V)</label>
-                <input type="number" step="0.01" class="form-control" id="battery_sim_voltage" name="battery_sim_voltage" value="{{ pm_config.get('BATTERY_SIM_VOLTAGE', '') }}">
-            </div>
-            <div class="col-md-2 mb-3">
-                <label for="battery_sim_current" class="form-label">Current (A)</label>
-                <input type="number" step="0.01" class="form-control" id="battery_sim_current" name="battery_sim_current" value="{{ pm_config.get('BATTERY_SIM_CURRENT', '') }}">
-            </div>
-            <div class="col-md-2 mb-3">
-                <label for="battery_sim_remaining" class="form-label">Runtime (min)</label>
-                <input type="number" min="0" class="form-control" id="battery_sim_remaining" name="battery_sim_remaining" value="{{ pm_config.get('BATTERY_SIM_REMAINING', '') }}">
-            </div>
-        </div>
-        </div>{# /battery-settings #}
-    </div>
-
-    <div class="config-section">
-        <h4 class="section-title"><i class="fas fa-bell me-2"></i>Notification Settings</h4>
-        <p class="text-muted">Select which events should trigger an email notification.</p>
-        <div class="row">
-            <div class="col-md-4">
-                <h5><i class="fas fa-bolt text-warning"></i> Power Events</h5>
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="notify_power_fail" name="notify_power_fail" value="true" {% if pm_config.get('NOTIFY_POWER_FAIL') == 'true' %}checked{% endif %}>
-                    <label class="form-check-label" for="notify_power_fail">Power Outage Detected</label>
-                </div>
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="notify_power_restored" name="notify_power_restored" value="true" {% if pm_config.get('NOTIFY_POWER_RESTORED') == 'true' %}checked{% endif %}>
-                    <label class="form-check-label" for="notify_power_restored">Power Restored</label>
-                </div>
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="notify_wol_failure" name="notify_wol_failure" value="true" {% if pm_config.get('NOTIFY_WOL_FAILURE', 'true') == 'true' %}checked{% endif %}>
-                    <label class="form-check-label" for="notify_wol_failure">Host Did Not Wake Up</label>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <h5><i class="fas fa-desktop text-primary"></i> UPS Client Events</h5>
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="notify_client_shutdown" name="notify_client_shutdown" value="true" {% if pm_config.get('NOTIFY_CLIENT_SHUTDOWN') == 'true' %}checked{% endif %}>
-                    <label class="form-check-label" for="notify_client_shutdown">Client Initiates Shutdown</label>
-                </div>
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="notify_client_stale" name="notify_client_stale" value="true" {% if pm_config.get('NOTIFY_CLIENT_STALE') == 'true' %}checked{% endif %}>
-                    <label class="form-check-label" for="notify_client_stale">Client Status becomes Stale</label>
-                </div>
-            </div>
-            <div class="col-md-4">
-                <h5><i class="fas fa-cogs text-info"></i> System Events</h5>
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="notify_app_error" name="notify_app_error" value="true" {% if pm_config.get('NOTIFY_APP_ERROR') == 'true' %}checked{% endif %}>
-                    <label class="form-check-label" for="notify_app_error">Application Error</label>
-                </div>
-                <div class="form-check form-switch">
-                    <input class="form-check-input" type="checkbox" id="notify_simulation_mode" name="notify_simulation_mode" value="true" {% if pm_config.get('NOTIFY_SIMULATION_MODE') == 'true' %}checked{% endif %}>
-                    <label class="form-check-label" for="notify_simulation_mode">Simulation Mode Changed</label>
-                </div>
-            </div>
-        </div>
-    </div>
-
-    <div class="mb-4">
-        <button type="submit" class="btn btn-primary btn-lg">
-            <i class="fas fa-save me-1"></i> Save Configuration
-        </button>
-</form>
-
-<form method="POST" action="{{ url_for('test_smtp') }}" class="d-inline-block ms-2">
-    <button type="submit" class="btn btn-secondary btn-lg">
-        <i class="fas fa-paper-plane me-1"></i> Send Test Email
+<div class="tabs settings-tabs" id="settings">
+  <nav role="tablist" aria-orientation="horizontal" aria-label="Settings sections">
+    {% set tablist = [('general', 'General', 'settings'), ('machines', 'Machines', 'server'),
+                      ('schedules', 'Schedules', 'calendar-clock'), ('notifications', 'Notifications', 'bell'),
+                      ('battery', 'Battery', 'battery-charging'), ('security', 'Security', 'lock')] %}
+    {% for key, label, glyph in tablist %}
+    <button type="button" role="tab" id="tab-{{ key }}" aria-controls="panel-{{ key }}" data-tab="{{ key }}"
+            aria-selected="{{ 'true' if loop.first else 'false' }}" tabindex="{{ '0' if loop.first else '-1' }}">
+      {{ ui.icon(glyph) }}<span>{{ label }}</span>
     </button>
-</form>
+    {% endfor %}
+  </nav>
 
-{# Keyed off the saved setting rather than the checkbox: the test probes the
-   configuration on disk, so offering it before Save would be misleading. #}
-{% if pm_config.get('BATTERY_ENABLED') == 'true' %}
-<form method="POST" action="{{ url_for('test_battery_connection') }}" class="d-inline-block ms-2">
-    <button type="submit" class="btn btn-secondary btn-lg">
-        <i class="fas fa-car-battery me-1"></i> Test Battery Monitor
-    </button>
-</form>
-{% endif %}
-</div>
+  {# ============================================================ GENERAL #}
+  <div role="tabpanel" id="panel-general" aria-labelledby="tab-general" tabindex="-1">
+    <div class="stack stack-lg">
 
-
-<div class="config-section">
-    <h4 class="section-title">
-        <i class="fas fa-server me-2"></i>Managed Hosts
-        <button type="button" class="btn btn-success btn-sm float-end" data-bs-toggle="modal" data-bs-target="#addWakeHostModal">
-            <i class="fas fa-plus"></i> Add Host
-        </button>
-    </h4>
-
-    {% if wake_hosts %}
-        <div class="table-responsive d-none d-lg-block">
-            <table class="table table-hover mobile-table">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>IP Address</th>
-                        <th>MAC Address</th>
-                        <th>Broadcast IP</th>
-                        <th>UPS Delay</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for section, host in wake_hosts.items() %}
-                    <tr>
-                        <td><strong>{{ host.get('NAME', section) }}</strong></td>
-                        <td><code>{{ host.get('IP', '') }}</code></td>
-                        <td><code>{{ host.get('MAC', '') }}</code></td>
-                        <td><code>{{ host.get('BROADCAST_IP', pm_config.get('DEFAULT_BROADCAST_IP', '')) }}</code></td>
-                        <td>
-                            {% if host.get('SHUTDOWN_DELAY_MINUTES') is not none and host.get('SHUTDOWN_DELAY_MINUTES') != '' %}
-                                {% if host.get('SHUTDOWN_DELAY_MINUTES') == '0' %}
-                                    <span class="badge bg-danger">Immediate</span>
-                                {% else %}
-                                    <span class="badge bg-success">{{ host.get('SHUTDOWN_DELAY_MINUTES') }} min</span>
-                                {% endif %}
-                            {% else %}
-                                <span class="badge bg-secondary">None</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <button type="button" class="btn btn-warning btn-sm me-1" onclick="editWakeHost('{{ section }}')" title="Edit">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <form method="POST" action="{{ url_for('delete_wake_host', section=section) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete host {{ host.get('NAME', section) }}?')">
-                                <button type="submit" class="btn btn-danger btn-sm" title="Delete">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
-        <div class="mobile-cards d-block d-lg-none">
-            {% for section, host in wake_hosts.items() %}
-            <div class="mobile-card">
-                <div class="mobile-card-header">{{ host.get('NAME', section) }}</div>
-                <div class="mobile-card-row">
-                    <span class="mobile-card-label">IP Address:</span>
-                    <span class="mobile-card-value"><code>{{ host.get('IP', '') }}</code></span>
-                </div>
-                <div class="mobile-card-row">
-                    <span class="mobile-card-label">MAC Address:</span>
-                    <span class="mobile-card-value"><code>{{ host.get('MAC', '') }}</code></span>
-                </div>
-                <div class="mobile-card-row">
-                    <span class="mobile-card-label">Broadcast IP:</span>
-                    <span class="mobile-card-value"><code>{{ host.get('BROADCAST_IP', pm_config.get('DEFAULT_BROADCAST_IP', '')) }}</code></span>
-                </div>
-                <div class="mobile-card-row">
-                    <span class="mobile-card-label">UPS Delay:</span>
-                    <span class="mobile-card-value">
-                        {% if host.get('SHUTDOWN_DELAY_MINUTES') is not none and host.get('SHUTDOWN_DELAY_MINUTES') != '' %}
-                            {% if host.get('SHUTDOWN_DELAY_MINUTES') == '0' %}
-                                <span class="badge bg-danger">Immediate</span>
-                            {% else %}
-                                <span class="badge bg-success">{{ host.get('SHUTDOWN_DELAY_MINUTES') }} min</span>
-                            {% endif %}
-                        {% else %}
-                            <span class="badge bg-secondary">None</span>
-                        {% endif %}
-                    </span>
-                </div>
-                <div class="mobile-card-actions">
-                    <button type="button" class="btn btn-warning btn-sm me-2" onclick="editWakeHost('{{ section }}')" title="Edit">
-                        <i class="fas fa-edit me-1"></i> Edit
-                    </button>
-                    <form method="POST" action="{{ url_for('delete_wake_host', section=section) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete host {{ host.get('NAME', section) }}?')">
-                        <button type="submit" class="btn btn-danger btn-sm" title="Delete">
-                            <i class="fas fa-trash me-1"></i> Delete
-                        </button>
-                    </form>
-                </div>
+      <div class="card test-mode-card" data-on="{{ 'true' if test_mode_on else 'false' }}">
+        <section class="spread">
+          <div class="cluster" style="--gap:0.75rem; flex-wrap:nowrap; align-items:flex-start">
+            <span class="setting-icon">{{ ui.icon('flask-conical') }}</span>
+            <div>
+              <h3>Test mode is {{ 'on' if test_mode_on else 'off' }}</h3>
+              <p class="muted small">
+                {% if test_mode_on %}Your machines are being told the power is out, so the ones that don't ignore test mode are shutting down.
+                {% else %}Pretend there's a power cut, to check your machines shut down properly.{% endif %}
+              </p>
             </div>
-            {% endfor %}
-        </div>
-    {% else %}
-        <div class="text-center text-muted py-4">
-            <i class="fas fa-server fa-3x mb-3"></i>
-            <h5>No hosts configured</h5>
-            <p>Add hosts to be automatically awakened after power restoration.</p>
-            <button type="button" class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addWakeHostModal">
-                <i class="fas fa-plus me-1"></i>Add First Host
-            </button>
-        </div>
-    {% endif %}
-</div>
+          </div>
+          <button type="button" class="btn" data-variant="{{ 'default' if test_mode_on else 'outline' }}"
+                  onclick="document.getElementById('test-mode-dialog').showModal()">
+            {{ 'Turn test mode off' if test_mode_on else 'Turn test mode on…' }}
+          </button>
+        </section>
+      </div>
 
-<div class="config-section">
-    <h4 class="section-title">
-        <i class="fas fa-calendar-alt me-2"></i>Power Outage Simulation Scheduler
-        <button type="button" class="btn btn-success btn-sm float-end" data-bs-toggle="modal" data-bs-target="#addScheduleModal">
-            <i class="fas fa-plus"></i> Add Schedule
-        </button>
-    </h4>
-    {% if schedules %}
-        <div class="table-responsive d-none d-lg-block">
-            <table class="table table-hover mobile-table">
-                <thead>
-                    <tr>
-                        <th>Name</th>
-                        <th>Type</th>
-                        <th>Day/Date</th>
-                        <th>Time</th>
-                        <th>Action</th>
-                        <th>Enabled</th>
-                        <th>Actions</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for section, schedule in schedules.items() %}
-                    <tr>
-                        <td><strong>{{ schedule.get('NAME', section) }}</strong></td>
-                        <td>{{ schedule.get('TYPE', 'One-time') | capitalize }}</td>
-                        <td>
-                            {% if schedule.get('TYPE') == 'recurring' %}
-                                {{ schedule.get('DAY_OF_WEEK') | capitalize }}
-                            {% else %}
-                                {{ schedule.get('DATE') }}
-                            {% endif %}
-                        </td>
-                        <td><code>{{ schedule.get('TIME') }}</code></td>
-                        <td>
-                            {% if schedule.get('ACTION') == 'start' %}
-                                <span class="badge bg-danger">Start Simulation</span>
-                            {% else %}
-                                <span class="badge bg-success">Stop Simulation</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            {% if schedule.get('ENABLED') == 'true' %}
-                                <span class="badge bg-success">Yes</span>
-                            {% else %}
-                                <span class="badge bg-secondary">No</span>
-                            {% endif %}
-                        </td>
-                        <td>
-                            <button type="button" class="btn btn-warning btn-sm me-1" onclick="editSchedule('{{ section }}')" title="Edit">
-                                <i class="fas fa-edit"></i>
-                            </button>
-                            <form method="POST" action="{{ url_for('delete_schedule', section=section) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete schedule {{ schedule.get('NAME', section) }}?')">
-                                <button type="submit" class="btn btn-danger btn-sm" title="Delete">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </form>
-                        </td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
-        </div>
-
-        <div class="mobile-cards d-block d-lg-none">
-            {% for section, schedule in schedules.items() %}
-            <div class="mobile-card">
-                <div class="mobile-card-header">{{ schedule.get('NAME', section) }}</div>
-                <div class="mobile-card-row">
-                    <span class="mobile-card-label">Type:</span>
-                    <span class="mobile-card-value">{{ schedule.get('TYPE', 'One-time') | capitalize }}</span>
-                </div>
-                <div class="mobile-card-row">
-                    <span class="mobile-card-label">
-                        {% if schedule.get('TYPE') == 'recurring' %}Day:{% else %}Date:{% endif %}
-                    </span>
-                    <span class="mobile-card-value">
-                        {% if schedule.get('TYPE') == 'recurring' %}
-                            {{ schedule.get('DAY_OF_WEEK') | capitalize }}
-                        {% else %}
-                            {{ schedule.get('DATE') }}
-                        {% endif %}
-                    </span>
-                </div>
-                <div class="mobile-card-row">
-                    <span class="mobile-card-label">Time:</span>
-                    <span class="mobile-card-value"><code>{{ schedule.get('TIME') }}</code></span>
-                </div>
-                <div class="mobile-card-row">
-                    <span class="mobile-card-label">Action:</span>
-                    <span class="mobile-card-value">
-                        {% if schedule.get('ACTION') == 'start' %}
-                            <span class="badge bg-danger">Start Simulation</span>
-                        {% else %}
-                            <span class="badge bg-success">Stop Simulation</span>
-                        {% endif %}
-                    </span>
-                </div>
-                <div class="mobile-card-row">
-                    <span class="mobile-card-label">Enabled:</span>
-                    <span class="mobile-card-value">
-                        {% if schedule.get('ENABLED') == 'true' %}
-                            <span class="badge bg-success">Yes</span>
-                        {% else %}
-                            <span class="badge bg-secondary">No</span>
-                        {% endif %}
-                    </span>
-                </div>
-                <div class="mobile-card-actions">
-                    <button type="button" class="btn btn-warning btn-sm me-2" onclick="editSchedule('{{ section }}')" title="Edit">
-                        <i class="fas fa-edit me-1"></i> Edit
-                    </button>
-                    <form method="POST" action="{{ url_for('delete_schedule', section=section) }}" style="display: inline;" onsubmit="return confirm('Are you sure you want to delete schedule {{ schedule.get('NAME', section) }}?')">
-                        <button type="submit" class="btn btn-danger btn-sm" title="Delete">
-                            <i class="fas fa-trash me-1"></i> Delete
-                        </button>
-                    </form>
-                </div>
+      <form method="post" action="{{ url_for('save_general') }}" class="stack stack-lg">
+        {{ csrf() }}
+        <div class="card">
+          <header><h2>Power cut detection</h2>
+            <p>Sentinels are devices on ordinary wall power, not the UPS. When none of them answer, the server treats it as a power cut.</p></header>
+          <section class="stack">
+            <div class="field">
+              <label for="sentinel_hosts">Sentinel IP addresses</label>
+              <textarea class="textarea mono" id="sentinel_hosts" name="sentinel_hosts" rows="4"
+                        placeholder="192.168.1.11&#10;192.168.1.12">{{ c.get('SENTINEL_HOSTS', '').split() | join('\n') }}</textarea>
+              <p>One per line. Pick devices that are always on, like a router's access point or a smart plug.</p>
             </div>
-            {% endfor %}
+          </section>
         </div>
-    {% else %}
-        <div class="text-center text-muted py-4">
-            <i class="fas fa-calendar-times fa-3x mb-3"></i>
-            <h5>No schedules configured</h5>
-            <p>Add schedules to automatically start or stop the power outage simulation.</p>
-        </div>
-    {% endif %}
-</div>
 
-
-{% macro battery_host_fields(prefix, enabled) %}
-{# Hidden entirely until the integration is switched on in the main
-   configuration - there is nothing useful to set here before that.
-
-   The marker below tells the server these fields were actually rendered.
-   Without it, editing a host while the integration is off would submit no
-   battery fields at all, and the handler would read that as "clear them". #}
-{% if enabled %}
-<input type="hidden" name="battery_fields_present" value="1">
-<hr>
-<h6><i class="fas fa-car-battery me-2"></i>Battery Monitor</h6>
-<p class="text-muted small">
-    Leave a threshold empty to inherit the global default.
-</p>
-<div class="mb-3">
-    <label for="{{ prefix }}_power_source" class="form-label">Power Source</label>
-    <select class="form-select" id="{{ prefix }}_power_source" name="power_source">
-        <option value="sentinel">Sentinel hosts only (default)</option>
-        <option value="battery">Battery monitor</option>
-        <option value="both">Both must agree (most conservative)</option>
-    </select>
-    <div class="form-text">
-        Which source decides this host's power state. <strong>Battery</strong> falls back to the
-        sentinel hosts automatically if battery data is unavailable. <strong>Both</strong> only
-        declares an outage when the two agree, so a network fault cannot trigger a shutdown.
-    </div>
-</div>
-<div class="row">
-    <div class="col-6 mb-3">
-        <label for="{{ prefix }}_shutdown_soc" class="form-label">Shutdown SoC (%)</label>
-        <input type="number" step="1" min="0" max="100" class="form-control" id="{{ prefix }}_shutdown_soc" name="shutdown_soc">
-        <div class="form-text">Shut down below this charge.</div>
-    </div>
-    <div class="col-6 mb-3">
-        <label for="{{ prefix }}_wol_min_soc" class="form-label">WoL Min SoC (%)</label>
-        <input type="number" step="1" min="0" max="100" class="form-control" id="{{ prefix }}_wol_min_soc" name="wol_min_soc">
-        <div class="form-text">Don't wake until the battery reaches this.</div>
-    </div>
-</div>
-<div class="row">
-    <div class="col-6 mb-3">
-        <label for="{{ prefix }}_shutdown_voltage" class="form-label">Shutdown Voltage (V)</label>
-        <input type="number" step="0.1" class="form-control" id="{{ prefix }}_shutdown_voltage" name="shutdown_voltage">
-    </div>
-    <div class="col-6 mb-3">
-        <label for="{{ prefix }}_critical_voltage" class="form-label">Critical Voltage (V)</label>
-        <input type="number" step="0.1" class="form-control" id="{{ prefix }}_critical_voltage" name="critical_voltage">
-        <div class="form-text">Shut down immediately below this.</div>
-    </div>
-</div>
-<div class="mb-3">
-    <label for="{{ prefix }}_min_runtime_minutes" class="form-label">Min Runtime (minutes)</label>
-    <input type="number" step="1" min="0" class="form-control" id="{{ prefix }}_min_runtime_minutes" name="min_runtime_minutes">
-    <div class="form-text">Shut down when the estimated runtime drops to this. 0 or empty disables the rule.</div>
-</div>
-{% endif %}
-{% endmacro %}
-
-<div class="modal fade" id="addWakeHostModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Add New Host</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <div class="card">
+          <header><h2>Waking machines</h2><p>What happens after the power comes back.</p></header>
+          <section class="form-grid">
+            <div class="field">
+              <label for="wol_delay_minutes">Wake-up delay</label>
+              <div class="input-unit"><input class="input" type="number" id="wol_delay_minutes" name="wol_delay_minutes" min="1" max="60" required value="{{ c.get('WOL_DELAY_MINUTES', '5') }}"><span>min</span></div>
+              <p>Wait this long after power returns, in case it flickers off again.</p>
             </div>
-            <form method="POST" action="{{ url_for('add_wake_host') }}">
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="add_name" class="form-label">Host Name</label>
-                        <input type="text" class="form-control" id="add_name" name="name" required>
-                        <div class="form-text">Descriptive name for the host (e.g., "File Server", "Synology NAS").</div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="add_ip" class="form-label">IP Address</label>
-                        <input type="text" class="form-control" id="add_ip" name="ip" placeholder="192.168.1.100" required>
-                        <div class="form-text">IP address of the host on the local network.</div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="add_mac" class="form-label">MAC Address</label>
-                        <input type="text" class="form-control" id="add_mac" name="mac" placeholder="00:11:32:aa:bb:cc" required>
-                        <div class="form-text">MAC address of the host's network card (format: XX:XX:XX:XX:XX:XX).</div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="add_broadcast_ip" class="form-label">Broadcast IP (optional)</label>
-                        <input type="text" class="form-control" id="add_broadcast_ip" name="broadcast_ip" placeholder="192.168.1.255">
-                        <div class="form-text">Broadcast address for this host (leave empty to use default).</div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="add_shutdown_delay" class="form-label">UPS Shutdown Delay (minutes, optional)</label>
-                        <input type="number" class="form-control" id="add_shutdown_delay" name="shutdown_delay" min="0" max="60" placeholder="5">
-                        <div class="form-text">If set, host will be a UPS client with specified shutdown delay. Use 0 for immediate shutdown.</div>
-                    </div>
-                    <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" id="add_auto_wol" name="auto_wol" value="true" checked>
-                        <label class="form-check-label" for="add_auto_wol">Enable Automatic Wake-on-LAN</label>
-                        <div class="form-text">If enabled, the server will be automatically started after power restoration.</div>
-                    </div>
-                    <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" id="add_ignore_simulation" name="ignore_simulation" value="true">
-                        <label class="form-check-label" for="add_ignore_simulation">Do not shutdown in Power Outage Simulation mode</label>
-                        <div class="form-text">If enabled, this UPS client will ignore simulated power outages and continue running.</div>
-                    </div>
-                    {{ battery_host_fields('add', pm_config.get('BATTERY_ENABLED') == 'true') }}
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-success">Add Host</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
-
-<div class="modal fade" id="editWakeHostModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <div class="modal-header">
-                <h5 class="modal-title">Edit Host</h5>
-                <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+            <div class="field">
+              <label for="wol_confirm_timeout_minutes">Check it woke up after</label>
+              <div class="input-unit"><input class="input" type="number" id="wol_confirm_timeout_minutes" name="wol_confirm_timeout_minutes" min="0" max="120" required value="{{ c.get('WOL_CONFIRM_TIMEOUT_MINUTES', '10') }}"><span>min</span></div>
+              <p>A machine that hasn't answered by then gets one more wake-up and is reported. 0 turns this off.</p>
             </div>
-            <form method="POST" id="editWakeHostForm">
-                <div class="modal-body">
-                    <div class="mb-3">
-                        <label for="edit_name" class="form-label">Host Name</label>
-                        <input type="text" class="form-control" id="edit_name" name="name" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="edit_ip" class="form-label">IP Address</label>
-                        <input type="text" class="form-control" id="edit_ip" name="ip" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="edit_mac" class="form-label">MAC Address</label>
-                        <input type="text" class="form-control" id="edit_mac" name="mac" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="edit_broadcast_ip" class="form-label">Broadcast IP (optional)</label>
-                        <input type="text" class="form-control" id="edit_broadcast_ip" name="broadcast_ip">
-                    </div>
-                    <div class="mb-3">
-                        <label for="edit_shutdown_delay" class="form-label">UPS Shutdown Delay (minutes, optional)</label>
-                        <input type="number" class="form-control" id="edit_shutdown_delay" name="shutdown_delay" min="0" max="60">
-                        <div class="form-text">If set, host will be a UPS client with specified shutdown delay. Use 0 for immediate shutdown.</div>
-                    </div>
-                    <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" id="edit_auto_wol" name="auto_wol" value="true">
-                        <label class="form-check-label" for="edit_auto_wol">Enable Automatic Wake-on-LAN</label>
-                        <div class="form-text">If enabled, the server will be automatically started after power restoration.</div>
-                    </div>
-                    <div class="form-check form-switch mb-3">
-                        <input class="form-check-input" type="checkbox" id="edit_ignore_simulation" name="ignore_simulation" value="true">
-                        <label class="form-check-label" for="edit_ignore_simulation">Do not shutdown in Power Outage Simulation mode</label>
-                        <div class="form-text">If enabled, this UPS client will ignore simulated power outages and continue running.</div>
-                    </div>
-                    {{ battery_host_fields('edit', pm_config.get('BATTERY_ENABLED') == 'true') }}
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-warning">Save Changes</button>
-                </div>
-            </form>
+            <div class="field">
+              <label for="default_broadcast_ip">Broadcast address</label>
+              <input class="input mono" type="text" id="default_broadcast_ip" name="default_broadcast_ip" required value="{{ c.get('DEFAULT_BROADCAST_IP', '192.168.1.255') }}">
+              <p>Where wake-up signals are sent. Usually your network's address ending in .255.</p>
+            </div>
+          </section>
         </div>
+
+        <div class="card">
+          <header><h2>Machine check-ins</h2></header>
+          <section class="form-grid">
+            <div class="field">
+              <label for="client_stale_timeout_minutes">Mark as stale after</label>
+              <div class="input-unit"><input class="input" type="number" id="client_stale_timeout_minutes" name="client_stale_timeout_minutes" min="1" max="60" required value="{{ c.get('CLIENT_STALE_TIMEOUT_MINUTES', '5') }}"><span>min</span></div>
+              <p>If a machine's UPS script stops checking in for this long, the dashboard flags it.</p>
+            </div>
+          </section>
+          <section>
+            {{ switch('debug_mode', 'Detailed logging', 'Writes much more to the log. Only useful while troubleshooting.', c.get('DEBUG_MODE') == 'true') }}
+          </section>
+        </div>
+
+        <div class="form-actions"><button type="submit" class="btn">Save general settings</button></div>
+      </form>
     </div>
+  </div>
+
+  {# ============================================================ MACHINES #}
+  <div role="tabpanel" id="panel-machines" aria-labelledby="tab-machines" tabindex="-1" hidden>
+    <div class="stack">
+      <div class="spread">
+        <p class="muted">Protected machines run the UPS script and turn themselves off in a power cut. Every machine with a MAC address can be woken afterwards.</p>
+        <button type="button" class="btn" data-host-add>{{ ui.icon('plus') }} Add a machine</button>
+      </div>
+
+      {% if wake_hosts %}
+      <div class="card list-card">
+        {% for section, h in wake_hosts | dictsort %}
+        {% set protected = h.get('SHUTDOWN_DELAY_MINUTES') not in (None, '') %}
+        <div class="list-row">
+          <span class="machine-icon">{{ ui.icon('server' if protected else 'monitor') }}</span>
+          <div class="list-main">
+            <div class="cluster" style="--gap:0.5rem">
+              <h3>{{ h.get('NAME', section) }}</h3>
+              <span class="mono muted small">{{ h.get('IP', '') }}</span>
+            </div>
+            <div class="cluster" style="--gap:0.375rem">
+              {% if protected %}
+                {% set d = h.get('SHUTDOWN_DELAY_MINUTES') %}
+                {{ ui.badge('Protected · turns off ' ~ ('immediately' if d == '0' else 'after ' ~ d ~ ' min'), 'info') }}
+                {% if h.get('IGNORE_SIMULATION') == 'true' %}{{ ui.badge('Ignores test mode', 'muted') }}{% endif %}
+              {% else %}
+                {{ ui.badge('Wake-up only', 'muted') }}
+              {% endif %}
+              {{ ui.badge('Wakes automatically' if h.get('AUTO_WOL', 'true') != 'false' else 'Auto-wake off', 'muted') }}
+              {% if battery_on and h.get('POWER_SOURCE') %}{{ ui.badge('Power source: ' ~ h.get('POWER_SOURCE'), 'muted') }}{% endif %}
+            </div>
+          </div>
+          <div class="list-actions">
+            <button type="button" class="btn" data-variant="ghost" data-size="icon" data-host-edit="{{ section }}"
+                    aria-label="Edit {{ h.get('NAME', section) }}">{{ ui.icon('pencil') }}</button>
+            <button type="button" class="btn" data-variant="ghost" data-size="icon"
+                    data-delete="{{ url_for('delete_wake_host', section=section) }}" data-delete-name="{{ h.get('NAME', section) }}"
+                    data-delete-kind="machine" aria-label="Delete {{ h.get('NAME', section) }}">{{ ui.icon('trash-2') }}</button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+        {% call ui.empty_state('No machines yet', 'Add the machines on your UPS so they can be turned off safely and woken afterwards.', 'server') %}
+          <button type="button" class="btn" data-size="sm" data-host-add>{{ ui.icon('plus') }} Add a machine</button>
+        {% endcall %}
+      {% endif %}
+    </div>
+  </div>
+
+  {# ============================================================ SCHEDULES #}
+  <div role="tabpanel" id="panel-schedules" aria-labelledby="tab-schedules" tabindex="-1" hidden>
+    <div class="stack">
+      <div class="spread">
+        <p class="muted">Turn test mode on and off at set times, to rehearse a power cut regularly.</p>
+        <button type="button" class="btn" data-schedule-add>{{ ui.icon('plus') }} Add a schedule</button>
+      </div>
+
+      {% if schedules %}
+      <div class="card list-card">
+        {% for section, s in schedules | dictsort %}
+        <div class="list-row">
+          <span class="machine-icon">{{ ui.icon('calendar-clock') }}</span>
+          <div class="list-main">
+            <h3>{{ s.get('NAME', section) }}</h3>
+            <div class="cluster" style="--gap:0.375rem">
+              <span class="small muted">
+                {% if s.get('TYPE') == 'recurring' %}Every {{ (s.get('DAY_OF_WEEK') or '') | capitalize }}{% else %}On {{ s.get('DATE', '') }}{% endif %}
+                at {{ s.get('TIME', '') }}
+              </span>
+              {{ ui.badge('Turns test mode ' ~ ('on' if s.get('ACTION') == 'start' else 'off'), 'warning' if s.get('ACTION') == 'start' else 'muted') }}
+              {% if s.get('ENABLED') != 'true' %}{{ ui.badge('Paused', 'muted') }}{% endif %}
+            </div>
+          </div>
+          <div class="list-actions">
+            <button type="button" class="btn" data-variant="ghost" data-size="icon" data-schedule-edit="{{ section }}"
+                    aria-label="Edit {{ s.get('NAME', section) }}">{{ ui.icon('pencil') }}</button>
+            <button type="button" class="btn" data-variant="ghost" data-size="icon"
+                    data-delete="{{ url_for('delete_schedule', section=section) }}" data-delete-name="{{ s.get('NAME', section) }}"
+                    data-delete-kind="schedule" aria-label="Delete {{ s.get('NAME', section) }}">{{ ui.icon('trash-2') }}</button>
+          </div>
+        </div>
+        {% endfor %}
+      </div>
+      {% else %}
+        {% call ui.empty_state('No schedules', 'Add one to run a pretend power cut at a quiet time, like Sunday at 3 am.', 'calendar-clock') %}
+          <button type="button" class="btn" data-size="sm" data-schedule-add>{{ ui.icon('plus') }} Add a schedule</button>
+        {% endcall %}
+      {% endif %}
+    </div>
+  </div>
+
+  {# ============================================================ NOTIFICATIONS #}
+  <div role="tabpanel" id="panel-notifications" aria-labelledby="tab-notifications" tabindex="-1" hidden>
+    <form method="post" action="{{ url_for('save_notifications') }}" class="stack stack-lg">
+      {{ csrf() }}
+      <div class="card">
+        <header><h2>Email me when</h2></header>
+        <section class="switch-list">
+          {{ switch('notify_power_fail', 'A power cut is detected', checked=c.get('NOTIFY_POWER_FAIL') == 'true') }}
+          {{ switch('notify_power_restored', 'The power comes back', checked=c.get('NOTIFY_POWER_RESTORED') == 'true') }}
+          {{ switch('notify_client_shutdown', 'A machine starts turning off', checked=c.get('NOTIFY_CLIENT_SHUTDOWN') == 'true') }}
+          {{ switch('notify_wol_failure', "A machine doesn't wake up", checked=c.get('NOTIFY_WOL_FAILURE', 'true') == 'true') }}
+          {{ switch('notify_client_stale', "A machine's UPS script stops checking in", checked=c.get('NOTIFY_CLIENT_STALE') == 'true') }}
+          {{ switch('notify_simulation_mode', 'Test mode is turned on or off', checked=c.get('NOTIFY_SIMULATION_MODE') == 'true') }}
+          {{ switch('notify_app_error', 'The server hits an error', checked=c.get('NOTIFY_APP_ERROR') == 'true') }}
+        </section>
+      </div>
+
+      <div class="card">
+        <header><h2>Email account</h2><p>The mail server the alerts are sent through.</p></header>
+        <section class="form-grid">
+          <div class="field">
+            <label for="smtp_server">Mail server</label>
+            <input class="input" id="smtp_server" name="smtp_server" placeholder="smtp.example.com" value="{{ c.get('SMTP_SERVER', '') }}">
+          </div>
+          <div class="field">
+            <label for="smtp_port">Port</label>
+            <input class="input" type="number" id="smtp_port" name="smtp_port" min="1" max="65535" placeholder="587" value="{{ c.get('SMTP_PORT', '') }}">
+            <p>Usually 587, or 465 for SSL.</p>
+          </div>
+          <div class="field">
+            <label for="smtp_use_tls">Encryption (STARTTLS)</label>
+            <select class="select" id="smtp_use_tls" name="smtp_use_tls">
+              <option value="auto" {% if c.get('SMTP_USE_TLS', 'auto') == 'auto' %}selected{% endif %}>Automatic (recommended)</option>
+              <option value="true" {% if c.get('SMTP_USE_TLS') == 'true' %}selected{% endif %}>Always</option>
+              <option value="false" {% if c.get('SMTP_USE_TLS') == 'false' %}selected{% endif %}>Never</option>
+            </select>
+            <p>Automatic uses it on every port except 26.</p>
+          </div>
+          <div class="field">
+            <label for="smtp_user">User name <span class="muted">(optional)</span></label>
+            <input class="input" id="smtp_user" name="smtp_user" autocomplete="off" value="{{ c.get('SMTP_USER', '') }}">
+          </div>
+          <div class="field">
+            <label for="smtp_password">Password <span class="muted">(optional)</span></label>
+            <input class="input" type="password" id="smtp_password" name="smtp_password" autocomplete="new-password"
+                   placeholder="{{ 'Saved — leave blank to keep it' if smtp_password_set else '' }}">
+            {% if smtp_password_set %}
+            <label class="checkbox-line small"><input type="checkbox" class="input" name="clear_smtp_password" value="1"> Remove the saved password</label>
+            {% endif %}
+          </div>
+          <div class="field">
+            <label for="smtp_sender_name">Sender name</label>
+            <input class="input" id="smtp_sender_name" name="smtp_sender_name" placeholder="UPS Server" value="{{ c.get('SMTP_SENDER_NAME', '') }}">
+          </div>
+          <div class="field">
+            <label for="smtp_sender_email">Sender address</label>
+            <input class="input" type="email" id="smtp_sender_email" name="smtp_sender_email" placeholder="ups@example.com" value="{{ c.get('SMTP_SENDER_EMAIL', '') }}">
+          </div>
+          <div class="field span-2">
+            <label for="smtp_recipients">Send alerts to</label>
+            <input class="input" id="smtp_recipients" name="smtp_recipients" placeholder="you@example.com, someone@example.com" value="{{ c.get('SMTP_RECIPIENTS', '') }}">
+            <p>Separate several addresses with commas.</p>
+          </div>
+        </section>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn">Save notification settings</button>
+        <button type="submit" class="btn" data-variant="outline" form="test-email-form"
+                title="Uses the saved settings, so save first">{{ ui.icon('send') }} Send a test email</button>
+      </div>
+    </form>
+    <form method="post" action="{{ url_for('test_smtp') }}" id="test-email-form">{{ csrf() }}</form>
+  </div>
+
+  {# ============================================================ BATTERY #}
+  <div role="tabpanel" id="panel-battery" aria-labelledby="tab-battery" tabindex="-1" hidden>
+    <form method="post" action="{{ url_for('save_battery') }}" class="stack stack-lg">
+      {{ csrf() }}
+      <div class="card">
+        <header><h2>Battery monitor</h2>
+          <p>Optional. If your UPS is a battery bank with a Victron monitor running
+            <a href="https://github.com/MarekWo/victron-bm-webui" target="_blank" rel="noopener">victron-bm-webui</a>,
+            the server can read its charge and whether mains is really gone. A network fault then no longer looks like a power cut.</p></header>
+        <section>
+          {{ switch('battery_enabled', 'Use a battery monitor', 'When off, power cuts are detected by the sentinels only.', battery_on) }}
+        </section>
+      </div>
+
+      {# Fields stay in the form while hidden, so switching off and on loses nothing. #}
+      <div class="stack stack-lg" id="battery-settings">
+        <div class="card">
+          <header><h2>Connection</h2></header>
+          <section class="form-grid">
+            <div class="field span-2">
+              <label for="battery_api_url">Monitor address</label>
+              <input class="input mono" id="battery_api_url" name="battery_api_url" placeholder="http://localhost:8088" value="{{ c.get('BATTERY_API_URL', 'http://localhost:8088') }}">
+            </div>
+            <div class="field">
+              <label for="battery_api_timeout">Give up after</label>
+              <div class="input-unit"><input class="input" type="number" id="battery_api_timeout" name="battery_api_timeout" min="1" max="30" value="{{ c.get('BATTERY_API_TIMEOUT', '5') }}"><span>s</span></div>
+            </div>
+            <div class="field">
+              <label for="battery_max_data_age">Ignore readings older than</label>
+              <div class="input-unit"><input class="input" type="number" id="battery_max_data_age" name="battery_max_data_age" min="15" max="600" value="{{ c.get('BATTERY_MAX_DATA_AGE', '60') }}"><span>s</span></div>
+            </div>
+          </section>
+        </div>
+
+        <div class="card">
+          <header><h2>Decisions</h2></header>
+          <section class="form-grid">
+            <div class="field">
+              <label for="battery_decision_mode">Mode</label>
+              <select class="select" id="battery_decision_mode" name="battery_decision_mode">
+                <option value="observe" {% if c.get('BATTERY_DECISION_MODE', 'observe') != 'enforce' %}selected{% endif %}>Observe — show what it would do</option>
+                <option value="enforce" {% if c.get('BATTERY_DECISION_MODE') == 'enforce' %}selected{% endif %}>Enforce — battery rules decide</option>
+              </select>
+              <p>Start with Observe for a few days. Machines keep following the sentinels while you check the battery rules agree.</p>
+            </div>
+            <div class="field">
+              <label for="battery_default_power_source">Machines decide by</label>
+              <select class="select" id="battery_default_power_source" name="battery_default_power_source">
+                <option value="sentinel" {% if c.get('BATTERY_DEFAULT_POWER_SOURCE', 'sentinel') == 'sentinel' %}selected{% endif %}>Sentinels only</option>
+                <option value="battery" {% if c.get('BATTERY_DEFAULT_POWER_SOURCE') == 'battery' %}selected{% endif %}>Battery monitor</option>
+                <option value="both" {% if c.get('BATTERY_DEFAULT_POWER_SOURCE') == 'both' %}selected{% endif %}>Both must agree</option>
+              </select>
+              <p>Used by machines that don't choose for themselves.</p>
+            </div>
+            <div class="field">
+              <label for="battery_capacity_ah">Usable capacity</label>
+              <div class="input-unit"><input class="input" type="number" step="1" min="0" id="battery_capacity_ah" name="battery_capacity_ah" value="{{ c.get('BATTERY_CAPACITY_AH', '0') }}"><span>Ah</span></div>
+              <p>Lets the dashboard count down to your own turn-off point. 0 uses the monitor's estimate.</p>
+            </div>
+          </section>
+        </div>
+
+        <div class="card">
+          <header><h2>Default limits</h2><p>Machines turn off when any limit is reached. Each machine can override these.</p></header>
+          <section class="form-grid">
+            <div class="field">
+              <label for="battery_default_shutdown_soc">Turn off below charge</label>
+              <div class="input-unit"><input class="input" type="number" min="0" max="100" id="battery_default_shutdown_soc" name="battery_default_shutdown_soc" value="{{ c.get('BATTERY_DEFAULT_SHUTDOWN_SOC', '25') }}"><span>%</span></div>
+            </div>
+            <div class="field">
+              <label for="battery_default_shutdown_voltage">Turn off below voltage</label>
+              <div class="input-unit"><input class="input" type="number" step="0.1" id="battery_default_shutdown_voltage" name="battery_default_shutdown_voltage" value="{{ c.get('BATTERY_DEFAULT_SHUTDOWN_VOLTAGE', '11.4') }}"><span>V</span></div>
+            </div>
+            <div class="field">
+              <label for="battery_default_critical_voltage">Turn off immediately below</label>
+              <div class="input-unit"><input class="input" type="number" step="0.1" id="battery_default_critical_voltage" name="battery_default_critical_voltage" value="{{ c.get('BATTERY_DEFAULT_CRITICAL_VOLTAGE', '11.0') }}"><span>V</span></div>
+            </div>
+            <div class="field">
+              <label for="battery_default_min_runtime_minutes">Turn off when runtime left is</label>
+              <div class="input-unit"><input class="input" type="number" min="0" id="battery_default_min_runtime_minutes" name="battery_default_min_runtime_minutes" value="{{ c.get('BATTERY_DEFAULT_MIN_RUNTIME_MINUTES', '0') }}"><span>min</span></div>
+              <p>0 turns this rule off.</p>
+            </div>
+            <div class="field">
+              <label for="battery_default_wol_min_soc">Wake only above charge</label>
+              <div class="input-unit"><input class="input" type="number" min="0" max="100" id="battery_default_wol_min_soc" name="battery_default_wol_min_soc" value="{{ c.get('BATTERY_DEFAULT_WOL_MIN_SOC', '0') }}"><span>%</span></div>
+              <p>0 wakes machines straight away.</p>
+            </div>
+          </section>
+        </div>
+
+        <div class="card">
+          <header><h2>Pretend battery readings</h2><p>For testing the limits without draining the battery. Empty fields keep the real reading. Separate from test mode.</p></header>
+          <section>
+            {{ switch('battery_simulation', 'Use pretend readings', checked=c.get('BATTERY_SIMULATION') == 'true') }}
+          </section>
+          <section class="form-grid">
+            <div class="field">
+              <label for="battery_sim_ac_power">Mains</label>
+              <select class="select" id="battery_sim_ac_power" name="battery_sim_ac_power">
+                <option value="" {% if not c.get('BATTERY_SIM_AC_POWER') %}selected{% endif %}>Real reading</option>
+                <option value="true" {% if c.get('BATTERY_SIM_AC_POWER') == 'true' %}selected{% endif %}>Present</option>
+                <option value="false" {% if c.get('BATTERY_SIM_AC_POWER') == 'false' %}selected{% endif %}>Gone</option>
+              </select>
+            </div>
+            <div class="field"><label for="battery_sim_soc">Charge (%)</label>
+              <input class="input" type="number" step="0.1" min="0" max="100" id="battery_sim_soc" name="battery_sim_soc" value="{{ c.get('BATTERY_SIM_SOC', '') }}"></div>
+            <div class="field"><label for="battery_sim_voltage">Voltage (V)</label>
+              <input class="input" type="number" step="0.01" id="battery_sim_voltage" name="battery_sim_voltage" value="{{ c.get('BATTERY_SIM_VOLTAGE', '') }}"></div>
+            <div class="field"><label for="battery_sim_current">Current (A)</label>
+              <input class="input" type="number" step="0.01" id="battery_sim_current" name="battery_sim_current" value="{{ c.get('BATTERY_SIM_CURRENT', '') }}"></div>
+            <div class="field"><label for="battery_sim_remaining">Runtime left (min)</label>
+              <input class="input" type="number" min="0" id="battery_sim_remaining" name="battery_sim_remaining" value="{{ c.get('BATTERY_SIM_REMAINING', '') }}"></div>
+          </section>
+        </div>
+      </div>
+
+      <div class="form-actions">
+        <button type="submit" class="btn">Save battery settings</button>
+        {% if battery_on %}
+        <button type="submit" class="btn" data-variant="outline" form="test-battery-form"
+                title="Uses the saved settings, so save first">{{ ui.icon('activity') }} Test the connection</button>
+        {% endif %}
+      </div>
+    </form>
+    <form method="post" action="{{ url_for('test_battery_connection') }}" id="test-battery-form">{{ csrf() }}</form>
+  </div>
+
+  {# ============================================================ SECURITY #}
+  <div role="tabpanel" id="panel-security" aria-labelledby="tab-security" tabindex="-1" hidden>
+    <div class="stack stack-lg">
+      <form method="post" action="{{ url_for('change_password') }}" class="card">
+        {{ csrf() }}
+        <header><h2>Change password</h2><p>Changing it signs out every other device.</p></header>
+        <section class="form-grid">
+          <div class="field span-2">
+            <label for="current">Current password</label>
+            <input class="input" type="password" id="current" name="current" autocomplete="current-password" required>
+          </div>
+          <div class="field">
+            <label for="new-password">New password</label>
+            <input class="input" type="password" id="new-password" name="password" autocomplete="new-password" minlength="8" required>
+            <p>At least 8 characters.</p>
+          </div>
+          <div class="field">
+            <label for="confirm">Type it again</label>
+            <input class="input" type="password" id="confirm" name="confirm" autocomplete="new-password" required>
+          </div>
+        </section>
+        <footer><button type="submit" class="btn">Change password</button></footer>
+      </form>
+
+      <div class="card">
+        <header><h2>About access</h2></header>
+        <section class="stack small">
+          <p>Every page here needs the admin password. You stay signed in for 30 days on each device, unless you log out.</p>
+          <p>The UPS script on your machines talks to a separate part of the server with its own token, so signing in or changing the password never affects shutdowns.</p>
+        </section>
+        <footer>
+          <form method="post" action="{{ url_for('logout') }}">{{ csrf() }}
+            <button type="submit" class="btn" data-variant="outline">{{ ui.icon('log-out') }} Log out</button>
+          </form>
+        </footer>
+      </div>
+    </div>
+  </div>
 </div>
 
-<div class="modal fade" id="scheduleModal" tabindex="-1">
-    <div class="modal-dialog">
-        <div class="modal-content">
-            <form method="POST" id="scheduleForm">
-                <div class="modal-header">
-                    <h5 class="modal-title" id="scheduleModalTitle">Add New Schedule</h5>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-                </div>
-                <div class="modal-body">
-                    <input type="hidden" id="edit_section" name="section">
-                    <div class="mb-3">
-                        <label for="schedule_name" class="form-label">Schedule Name</label>
-                        <input type="text" class="form-control" id="schedule_name" name="name" required>
-                    </div>
-                    <div class="mb-3">
-                        <label for="schedule_type" class="form-label">Type</label>
-                        <select class="form-select" id="schedule_type" name="type">
-                            <option value="one-time">One-time</option>
-                            <option value="recurring">Recurring</option>
-                        </select>
-                    </div>
-                    <div id="one-time-fields">
-                        <div class="mb-3">
-                            <label for="schedule_date" class="form-label">Date</label>
-                            <input type="date" class="form-control" id="schedule_date" name="date">
-                        </div>
-                    </div>
-                    <div id="recurring-fields" style="display: none;">
-                        <div class="mb-3">
-                            <label for="schedule_day" class="form-label">Day of the Week</label>
-                            <select class="form-select" id="schedule_day" name="day_of_week">
-                                <option value="monday">Monday</option>
-                                <option value="tuesday">Tuesday</option>
-                                <option value="wednesday">Wednesday</option>
-                                <option value="thursday">Thursday</option>
-                                <option value="friday">Friday</option>
-                                <option value="saturday">Saturday</option>
-                                <option value="sunday">Sunday</option>
-                                <option value="everyday">Everyday</option>
-                            </select>
-                        </div>
-                    </div>
-                    <div class="mb-3">
-                        <label for="schedule_time" class="form-label">Time</label>
-                        <input type="time" class="form-control" id="schedule_time" name="time" required>
-                    </div>
-                    <div class="mb-3">
-                        <label class="form-label">Action</label>
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="action" id="action_start" value="start" checked>
-                            <label class="form-check-label" for="action_start">Start Simulation</label>
-                        </div>
-                        <div class="form-check">
-                            <input class="form-check-input" type="radio" name="action" id="action_stop" value="stop">
-                            <label class="form-check-label" for="action_stop">Stop Simulation</label>
-                        </div>
-                    </div>
-                    <div class="form-check form-switch">
-                        <input class="form-check-input" type="checkbox" id="schedule_enabled" name="enabled" value="true" checked>
-                        <label class="form-check-label" for="schedule_enabled">Enabled</label>
-                    </div>
-                </div>
-                <div class="modal-footer">
-                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-                    <button type="submit" class="btn btn-success" id="saveScheduleBtn">Add Schedule</button>
-                </div>
-            </form>
-        </div>
-    </div>
-</div>
+{# ============================================================ DIALOGS #}
 
+<dialog id="test-mode-dialog" class="dialog" aria-labelledby="test-mode-title">
+  <div>
+    <header>
+      <h2 id="test-mode-title">{{ 'Turn test mode off?' if test_mode_on else 'Turn test mode on?' }}</h2>
+      {% if test_mode_on %}
+      <p>Machines will be told the power is back. Ones that turned themselves off will be woken as usual.</p>
+      {% else %}
+      <p>Every machine will be told the power is out.
+        {% if test_mode_acting %}These will <strong>turn themselves off</strong>: {{ test_mode_acting | join(', ') }}.
+        {% else %}All your protected machines ignore test mode, so none will turn off.{% endif %}</p>
+      {% endif %}
+    </header>
+    <footer>
+      <button type="button" class="btn" data-variant="outline" onclick="this.closest('dialog').close()">Cancel</button>
+      <form method="post" action="{{ url_for('save_test_mode') }}">
+        {{ csrf() }}<input type="hidden" name="state" value="{{ 'off' if test_mode_on else 'on' }}">
+        <button type="submit" class="btn" {% if not test_mode_on %}data-variant="destructive"{% endif %}>
+          {{ 'Turn test mode off' if test_mode_on else 'Turn test mode on' }}</button>
+      </form>
+    </footer>
+  </div>
+</dialog>
+
+<dialog id="host-dialog" class="dialog form-dialog" aria-labelledby="host-dialog-title">
+  <div>
+    <header><h2 id="host-dialog-title">Add a machine</h2></header>
+    <section>
+      <form method="post" id="host-form" action="{{ url_for('add_wake_host') }}" class="stack" data-add="{{ url_for('add_wake_host') }}">
+        {{ csrf() }}
+        <div class="field">
+          <label for="host-name">Name</label>
+          <input class="input" id="host-name" name="name" required placeholder="File server">
+        </div>
+        <div class="form-grid">
+          <div class="field">
+            <label for="host-ip">IP address</label>
+            <input class="input mono" id="host-ip" name="ip" required placeholder="192.168.1.100">
+          </div>
+          <div class="field">
+            <label for="host-mac">MAC address</label>
+            <input class="input mono" id="host-mac" name="mac" required placeholder="00:11:32:AA:BB:CC">
+          </div>
+        </div>
+        {{ switch('protected', 'Protected by the UPS', 'It runs the UPS script and turns itself off in a power cut.', id='host-protected') }}
+        <div class="stack" data-protected-only>
+          <div class="field">
+            <label for="host-delay">Turn off after</label>
+            <div class="input-unit"><input class="input" type="number" id="host-delay" name="shutdown_delay" min="0" max="60" value="0"><span>min</span></div>
+            <p>How long it keeps running on the UPS once a power cut starts. 0 turns it off immediately.</p>
+          </div>
+          {{ switch('ignore_simulation', 'Ignore test mode', 'Keep it running during test power cuts.', id='host-ignore') }}
+        </div>
+        {{ switch('auto_wol', 'Wake automatically', 'Send it a wake-up signal when the power comes back.', checked=True, id='host-auto') }}
+        <details class="advanced">
+          <summary>Advanced</summary>
+          <div class="field">
+            <label for="host-broadcast">Broadcast address</label>
+            <input class="input mono" id="host-broadcast" name="broadcast_ip" placeholder="{{ c.get('DEFAULT_BROADCAST_IP', '') }}">
+            <p>Only if this machine is on a different network. Leave empty to use the default.</p>
+          </div>
+        </details>
+        {% if battery_on %}
+        {# Tells the server these fields were shown; without it a save would clear them. #}
+        <input type="hidden" name="battery_fields_present" value="1">
+        <fieldset class="stack battery-fields">
+          <legend>Battery rules</legend>
+          <div class="field">
+            <label for="host-power-source">Decides by</label>
+            <select class="select" id="host-power-source" name="power_source">
+              <option value="sentinel">Sentinels (default)</option>
+              <option value="battery">Battery monitor</option>
+              <option value="both">Both must agree</option>
+            </select>
+          </div>
+          <p class="muted small">Leave a limit empty to use the default from the Battery tab.</p>
+          <div class="form-grid">
+            <div class="field"><label for="host-shutdown-soc">Turn off below charge (%)</label>
+              <input class="input" type="number" min="0" max="100" id="host-shutdown-soc" name="shutdown_soc"></div>
+            <div class="field"><label for="host-wol-min-soc">Wake only above charge (%)</label>
+              <input class="input" type="number" min="0" max="100" id="host-wol-min-soc" name="wol_min_soc"></div>
+            <div class="field"><label for="host-shutdown-voltage">Turn off below voltage (V)</label>
+              <input class="input" type="number" step="0.1" id="host-shutdown-voltage" name="shutdown_voltage"></div>
+            <div class="field"><label for="host-critical-voltage">Turn off immediately below (V)</label>
+              <input class="input" type="number" step="0.1" id="host-critical-voltage" name="critical_voltage"></div>
+            <div class="field"><label for="host-min-runtime">Turn off when runtime left is (min)</label>
+              <input class="input" type="number" min="0" id="host-min-runtime" name="min_runtime_minutes"></div>
+          </div>
+        </fieldset>
+        {% endif %}
+      </form>
+    </section>
+    <footer>
+      <button type="button" class="btn" data-variant="outline" onclick="this.closest('dialog').close()">Cancel</button>
+      <button type="submit" class="btn" form="host-form" id="host-submit">Add machine</button>
+    </footer>
+  </div>
+</dialog>
+
+<dialog id="schedule-dialog" class="dialog form-dialog" aria-labelledby="schedule-dialog-title">
+  <div>
+    <header><h2 id="schedule-dialog-title">Add a schedule</h2></header>
+    <section>
+      <form method="post" id="schedule-form" action="{{ url_for('add_schedule') }}" class="stack" data-add="{{ url_for('add_schedule') }}">
+        {{ csrf() }}
+        <div class="field">
+          <label for="schedule-name">Name</label>
+          <input class="input" id="schedule-name" name="name" required placeholder="Weekly test">
+        </div>
+        <fieldset class="field">
+          <legend>It should</legend>
+          <label class="checkbox-line"><input type="radio" class="input" name="action" value="start" id="schedule-start" checked> Turn test mode on</label>
+          <label class="checkbox-line"><input type="radio" class="input" name="action" value="stop" id="schedule-stop"> Turn test mode off</label>
+        </fieldset>
+        <div class="form-grid">
+          <div class="field">
+            <label for="schedule-type">Repeats</label>
+            <select class="select" id="schedule-type" name="type">
+              <option value="recurring">Every week</option>
+              <option value="one-time">Once</option>
+            </select>
+          </div>
+          <div class="field" data-type="recurring">
+            <label for="schedule-day">Day</label>
+            <select class="select" id="schedule-day" name="day_of_week">
+              {% for d in ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'] %}
+              <option value="{{ d }}">{{ d | capitalize }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="field" data-type="one-time" hidden>
+            <label for="schedule-date">Date</label>
+            <input class="input" type="date" id="schedule-date" name="date">
+          </div>
+          <div class="field">
+            <label for="schedule-time">Time</label>
+            <input class="input" type="time" id="schedule-time" name="time" required>
+          </div>
+        </div>
+        {{ switch('enabled', 'Active', 'Turn off to keep the schedule but skip it for now.', checked=True, id='schedule-enabled') }}
+      </form>
+    </section>
+    <footer>
+      <button type="button" class="btn" data-variant="outline" onclick="this.closest('dialog').close()">Cancel</button>
+      <button type="submit" class="btn" form="schedule-form" id="schedule-submit">Add schedule</button>
+    </footer>
+  </div>
+</dialog>
+
+<dialog id="delete-dialog" class="dialog" aria-labelledby="delete-title" aria-describedby="delete-text">
+  <div>
+    <header>
+      <h2 id="delete-title">Delete?</h2>
+      <p id="delete-text">This can't be undone.</p>
+    </header>
+    <footer>
+      <button type="button" class="btn" data-variant="outline" onclick="this.closest('dialog').close()">Cancel</button>
+      <form method="post" id="delete-form">{{ csrf() }}
+        <button type="submit" class="btn" data-variant="destructive">{{ ui.icon('trash-2') }} Delete</button>
+      </form>
+    </footer>
+  </div>
+</dialog>
 {% endblock %}
 
 {% block extra_scripts %}
 <script>
-// Scripts for Wake Host Management
-const wakeHostsData = {{ wake_hosts|tojson }};
-
-// Config key -> form field id suffix. Every editable per-host setting lives
-// here, so adding a field is a one-line change rather than another positional
-// argument threaded through two call sites.
-const HOST_TEXT_FIELDS = {
-    'NAME': 'name',
-    'IP': 'ip',
-    'MAC': 'mac',
-    'BROADCAST_IP': 'broadcast_ip',
-    'SHUTDOWN_DELAY_MINUTES': 'shutdown_delay',
-    'SHUTDOWN_SOC': 'shutdown_soc',
-    'SHUTDOWN_VOLTAGE': 'shutdown_voltage',
-    'CRITICAL_VOLTAGE': 'critical_voltage',
-    'MIN_RUNTIME_MINUTES': 'min_runtime_minutes',
-    'WOL_MIN_SOC': 'wol_min_soc'
-};
-
-function editWakeHost(section) {
-    const host = wakeHostsData[section] || {};
-
-    for (const [key, field] of Object.entries(HOST_TEXT_FIELDS)) {
-        const el = document.getElementById('edit_' + field);
-        if (el) el.value = host[key] !== undefined ? host[key] : '';
-    }
-
-    document.getElementById('edit_auto_wol').checked = (host.AUTO_WOL || 'true') === 'true';
-    document.getElementById('edit_ignore_simulation').checked = host.IGNORE_SIMULATION === 'true';
-    document.getElementById('edit_power_source').value = host.POWER_SOURCE || 'sentinel';
-
-    document.getElementById('editWakeHostForm').action = '/edit_wake_host/' + section;
-    new bootstrap.Modal(document.getElementById('editWakeHostModal')).show();
-}
-
-// Battery settings are irrelevant to anyone without a Victron monitor, so keep
-// them out of the way until the integration is switched on. The fields stay in
-// the form while hidden, so toggling off and back on loses nothing.
 (function () {
-    const toggle = document.getElementById('battery_enabled');
-    const settings = document.getElementById('battery-settings');
-    if (!toggle || !settings) return;
+  'use strict';
+  var hosts = {{ wake_hosts | tojson }};
+  var schedules = {{ schedules | tojson }};
 
-    function sync() {
-        settings.style.display = toggle.checked ? '' : 'none';
-    }
-    toggle.addEventListener('change', sync);
-    sync();
-})();
-
-document.getElementById('add_mac').addEventListener('input', function(e) {
-    let value = e.target.value.replace(/[^0-9A-Fa-f]/g, '');
-    let formattedValue = value.match(/.{1,2}/g)?.join(':') || '';
-    if (formattedValue.length > 17) formattedValue = formattedValue.substring(0, 17);
-    e.target.value = formattedValue.toUpperCase();
-});
-
-document.getElementById('edit_mac').addEventListener('input', function(e) {
-    let value = e.target.value.replace(/[^0-9A-Fa-f]/g, '');
-    let formattedValue = value.match(/.{1,2}/g)?.join(':') || '';
-    if (formattedValue.length > 17) formattedValue = formattedValue.substring(0, 17);
-    e.target.value = formattedValue.toUpperCase();
-});
-
-function formatIP(input) {
-    input.addEventListener('input', function(e) {
-        let value = e.target.value.replace(/[^0-9.]/g, '');
-        let parts = value.split('.');
-        if (parts.length > 4) {
-            parts = parts.slice(0, 4);
-        }
-        parts = parts.map(part => {
-            if (parseInt(part) > 255) return '255';
-            return part;
-        });
-        e.target.value = parts.join('.');
+  /* ---- tabs follow the address (#machines), so a save returns to its tab ---- */
+  var tabsEl = document.getElementById('settings');
+  function showTab(key, focus) {
+    var tab = document.getElementById('tab-' + key);
+    if (!tab) return;
+    /* On a phone the tab bar scrolls sideways; bring the current tab into view. */
+    var bar = tab.parentElement;
+    bar.scrollLeft = Math.max(0, tab.offsetLeft - bar.offsetLeft - 16);
+    if (tabsEl.select) { tabsEl.select(tab, focus); return; }
+    tabsEl.querySelectorAll('[role="tab"]').forEach(function (t) {
+      var on = t === tab;
+      t.setAttribute('aria-selected', on ? 'true' : 'false');
+      t.setAttribute('tabindex', on ? '0' : '-1');
+      document.getElementById(t.getAttribute('aria-controls')).hidden = !on;
     });
-}
+  }
+  function fromHash() { showTab((location.hash || '#general').slice(1), false); }
+  tabsEl.addEventListener('click', function (e) {
+    var t = e.target.closest('[role="tab"]');
+    if (t) history.replaceState(null, '', '#' + t.dataset.tab);
+  });
+  window.addEventListener('hashchange', fromHash);
+  /* Basecoat sets the tabs up after DOMContentLoaded; apply the hash after it. */
+  document.addEventListener('DOMContentLoaded', function () { setTimeout(fromHash, 0); });
+  fromHash();
 
-formatIP(document.getElementById('add_ip'));
-formatIP(document.getElementById('add_broadcast_ip'));
-formatIP(document.getElementById('edit_ip'));
-formatIP(document.getElementById('edit_broadcast_ip'));
+  /* ---- battery settings only show while the monitor is switched on ---- */
+  var batteryToggle = document.getElementById('battery_enabled');
+  var batterySettings = document.getElementById('battery-settings');
+  function syncBattery() { batterySettings.hidden = !batteryToggle.checked; }
+  batteryToggle.addEventListener('change', syncBattery);
+  syncBattery();
 
-document.addEventListener('DOMContentLoaded', function() {
-    const forms = document.querySelectorAll('form');
-    forms.forEach(form => {
-        form.addEventListener('submit', function(e) {
-            const ipInputs = form.querySelectorAll('input[name="ip"], input[name="broadcast_ip"], input[name="default_broadcast_ip"]');
-            
-            ipInputs.forEach(input => {
-                if (input.value && !isValidIP(input.value)) {
-                    e.preventDefault();
-                    input.classList.add('is-invalid');
-                    showError('Invalid IP address: ' + input.value);
-                    return false;
-                } else {
-                    input.classList.remove('is-invalid');
-                }
-            });
+  /* ---- machine dialog ---- */
+  var hostDialog = document.getElementById('host-dialog');
+  var hostForm = document.getElementById('host-form');
+  var protectedSwitch = document.getElementById('host-protected');
+  function syncProtected() {
+    var on = protectedSwitch.checked;
+    hostForm.querySelectorAll('[data-protected-only]').forEach(function (el) { el.hidden = !on; });
+    /* A disabled field isn't sent, so an unprotected machine saves no delay. */
+    document.getElementById('host-delay').disabled = !on;
+    document.getElementById('host-ignore').disabled = !on;
+  }
+  protectedSwitch.addEventListener('change', syncProtected);
+  var hostFields = { NAME: 'host-name', IP: 'host-ip', MAC: 'host-mac', BROADCAST_IP: 'host-broadcast',
+    SHUTDOWN_SOC: 'host-shutdown-soc', WOL_MIN_SOC: 'host-wol-min-soc', SHUTDOWN_VOLTAGE: 'host-shutdown-voltage',
+    CRITICAL_VOLTAGE: 'host-critical-voltage', MIN_RUNTIME_MINUTES: 'host-min-runtime' };
 
-            const macInputs = form.querySelectorAll('input[name="mac"]');
-            macInputs.forEach(input => {
-                if (input.value && !isValidMAC(input.value)) {
-                    e.preventDefault();
-                    input.classList.add('is-invalid');
-                    showError('Invalid MAC address: ' + input.value);
-                    return false;
-                } else {
-                    input.classList.remove('is-invalid');
-                }
-            });
-        });
+  function openHost(section) {
+    var h = section ? hosts[section] || {} : {};
+    hostForm.reset();
+    hostForm.action = section ? '/edit_wake_host/' + encodeURIComponent(section) : hostForm.dataset.add;
+    Object.keys(hostFields).forEach(function (key) {
+      var el = document.getElementById(hostFields[key]);
+      if (el) el.value = h[key] || '';
     });
-});
+    var delay = h.SHUTDOWN_DELAY_MINUTES;
+    protectedSwitch.checked = section ? (delay !== undefined && delay !== '') : true;
+    document.getElementById('host-delay').value = delay || '0';
+    document.getElementById('host-ignore').checked = h.IGNORE_SIMULATION === 'true';
+    document.getElementById('host-auto').checked = (h.AUTO_WOL || 'true') !== 'false';
+    var source = document.getElementById('host-power-source');
+    if (source) source.value = h.POWER_SOURCE || 'sentinel';
+    document.getElementById('host-dialog-title').textContent = section ? 'Edit ' + (h.NAME || 'machine') : 'Add a machine';
+    document.getElementById('host-submit').textContent = section ? 'Save changes' : 'Add machine';
+    hostForm.querySelector('details.advanced').open = !!h.BROADCAST_IP;
+    syncProtected();
+    hostDialog.showModal();
+  }
 
-function isValidIP(ip) {
-    const regex = /^(?:(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.){3}(?:25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)$/;
-    return regex.test(ip);
-}
+  /* Tidy MAC addresses as they are typed: 001132aabbcc -> 00:11:32:AA:BB:CC */
+  document.getElementById('host-mac').addEventListener('input', function (e) {
+    var hex = e.target.value.replace(/[^0-9a-f]/gi, '').slice(0, 12);
+    e.target.value = (hex.match(/.{1,2}/g) || []).join(':').toUpperCase();
+  });
 
-function isValidMAC(mac) {
-    const regex = /^([0-9A-Fa-f]{2}[:-]){5}([0-9A-Fa-f]{2})$/i;
-    return regex.test(mac);
-}
-
-function showError(message) {
-    const alertContainer = document.querySelector('.container');
-    const alert = document.createElement('div');
-    alert.className = 'alert alert-danger alert-dismissible fade show';
-    alert.innerHTML = `
-        <i class="fas fa-exclamation-triangle me-2"></i>
-        ${message}
-        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-    `;
-    alertContainer.insertBefore(alert, alertContainer.firstChild);
-    setTimeout(() => {
-        const bsAlert = new bootstrap.Alert(alert);
-        bsAlert.close();
-    }, 5000);
-}
-
-// New scripts for Schedule Management
-const addScheduleModalBtn = document.querySelector('[data-bs-target="#addScheduleModal"]');
-if (addScheduleModalBtn) {
-    addScheduleModalBtn.addEventListener('click', () => {
-        const scheduleModal = new bootstrap.Modal(document.getElementById('scheduleModal'));
-        const scheduleForm = document.getElementById('scheduleForm');
-        scheduleForm.reset();
-        scheduleForm.action = "{{ url_for('add_schedule') }}";
-        document.getElementById('scheduleModalTitle').innerText = 'Add New Schedule';
-        const saveScheduleBtn = document.getElementById('saveScheduleBtn');
-        saveScheduleBtn.innerText = 'Add Schedule';
-        saveScheduleBtn.className = 'btn btn-success';
-        document.getElementById('schedule_type').dispatchEvent(new Event('change'));
-        scheduleModal.show();
+  /* ---- schedule dialog ---- */
+  var scheduleDialog = document.getElementById('schedule-dialog');
+  var scheduleForm = document.getElementById('schedule-form');
+  var typeSelect = document.getElementById('schedule-type');
+  function syncType() {
+    scheduleForm.querySelectorAll('[data-type]').forEach(function (el) {
+      var on = el.dataset.type === typeSelect.value;
+      el.hidden = !on;
+      el.querySelectorAll('input, select').forEach(function (i) { i.required = on; });
     });
-}
+  }
+  typeSelect.addEventListener('change', syncType);
 
-
-const allSchedules = {{ schedules|tojson|safe }};
-
-function editSchedule(section) {
-    const schedule = allSchedules[section];
-    if (!schedule) return;
-    
-    const scheduleModal = new bootstrap.Modal(document.getElementById('scheduleModal'));
-    const scheduleForm = document.getElementById('scheduleForm');
+  function openSchedule(section) {
+    var s = section ? schedules[section] || {} : {};
     scheduleForm.reset();
-    scheduleForm.action = `/edit_schedule/${section}`;
-    document.getElementById('scheduleModalTitle').innerText = 'Edit Schedule';
-    const saveScheduleBtn = document.getElementById('saveScheduleBtn');
-    saveScheduleBtn.innerText = 'Save Changes';
-    saveScheduleBtn.className = 'btn btn-warning';
+    scheduleForm.action = section ? '/edit_schedule/' + encodeURIComponent(section) : scheduleForm.dataset.add;
+    document.getElementById('schedule-name').value = s.NAME || '';
+    document.getElementById(s.ACTION === 'stop' ? 'schedule-stop' : 'schedule-start').checked = true;
+    typeSelect.value = s.TYPE === 'one-time' ? 'one-time' : 'recurring';
+    document.getElementById('schedule-day').value = s.DAY_OF_WEEK || 'sunday';
+    document.getElementById('schedule-date').value = s.DATE || '';
+    document.getElementById('schedule-time').value = s.TIME || '03:00';
+    document.getElementById('schedule-enabled').checked = section ? s.ENABLED === 'true' : true;
+    document.getElementById('schedule-dialog-title').textContent = section ? 'Edit schedule' : 'Add a schedule';
+    document.getElementById('schedule-submit').textContent = section ? 'Save changes' : 'Add schedule';
+    syncType();
+    scheduleDialog.showModal();
+  }
 
-    document.getElementById('edit_section').value = section;
-    document.getElementById('schedule_name').value = schedule.NAME || '';
-    document.getElementById('schedule_type').value = schedule.TYPE || 'one-time';
-    
-    if (schedule.TYPE === 'recurring') {
-        document.getElementById('schedule_day').value = schedule.DAY_OF_WEEK || 'monday';
-    } else {
-        document.getElementById('schedule_date').value = schedule.DATE || '';
+  /* ---- delete confirmation ---- */
+  var deleteDialog = document.getElementById('delete-dialog');
+
+  document.addEventListener('click', function (e) {
+    var el;
+    if ((el = e.target.closest('[data-host-add]'))) openHost(null);
+    else if ((el = e.target.closest('[data-host-edit]'))) openHost(el.dataset.hostEdit);
+    else if ((el = e.target.closest('[data-schedule-add]'))) openSchedule(null);
+    else if ((el = e.target.closest('[data-schedule-edit]'))) openSchedule(el.dataset.scheduleEdit);
+    else if ((el = e.target.closest('[data-delete]'))) {
+      document.getElementById('delete-form').action = el.dataset.delete;
+      document.getElementById('delete-title').textContent = 'Delete ' + el.dataset.deleteName + '?';
+      document.getElementById('delete-text').textContent = el.dataset.deleteKind === 'machine'
+        ? "It will no longer be woken after a power cut or shown on the dashboard. This can't be undone."
+        : "This can't be undone.";
+      deleteDialog.showModal();
     }
-    
-    document.getElementById('schedule_time').value = schedule.TIME || '';
-    
-    if (schedule.ACTION === 'stop') {
-        document.getElementById('action_stop').checked = true;
-    } else {
-        document.getElementById('action_start').checked = true;
-    }
-    
-    document.getElementById('schedule_enabled').checked = (schedule.ENABLED === 'true');
+  });
 
-    document.getElementById('schedule_type').dispatchEvent(new Event('change'));
-    scheduleModal.show();
-}
-
-document.getElementById('schedule_type').addEventListener('change', function() {
-    if (this.value === 'one-time') {
-        document.getElementById('one-time-fields').style.display = 'block';
-        document.getElementById('recurring-fields').style.display = 'none';
-        document.getElementById('schedule_date').required = true;
-        document.getElementById('schedule_day').required = false;
-    } else {
-        document.getElementById('one-time-fields').style.display = 'none';
-        document.getElementById('recurring-fields').style.display = 'block';
-        document.getElementById('schedule_date').required = false;
-        document.getElementById('schedule_day').required = true;
-    }
-});
-
+  /* Clicking the dimmed background closes a dialog. */
+  document.querySelectorAll('dialog.dialog').forEach(function (d) {
+    d.addEventListener('click', function (e) { if (e.target === d) d.close(); });
+  });
+})();
 </script>
 {% endblock %}
