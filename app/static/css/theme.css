@@ -1,0 +1,61 @@
+/*
+ * Theme: the design tokens layered on top of Basecoat.
+ *
+ * Basecoat already defines the shadcn/ui variables (--background, --primary,
+ * --border, --radius, ...). A theme exported from tweakcn.com or ui.shadcn.com
+ * can be pasted at the bottom of this file to replace them; its :root and .dark
+ * blocks win because this file loads after Basecoat.
+ *
+ * What this file adds:
+ *   - the Geist fonts, stored in the app so nothing loads from the internet;
+ *   - status colours shadcn does not have but a UPS dashboard needs
+ *     (success = power OK, warning = on battery / waiting, info = in progress).
+ */
+
+@font-face {
+  font-family: "Geist";
+  src: url("../fonts/geist/Geist-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+@font-face {
+  font-family: "Geist Mono";
+  src: url("../fonts/geist/GeistMono-latin.woff2") format("woff2");
+  font-weight: 100 900;
+  font-style: normal;
+  font-display: swap;
+}
+
+:root {
+  --font-sans: "Geist", ui-sans-serif, system-ui, sans-serif, "Apple Color Emoji", "Segoe UI Emoji";
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --success: oklch(0.527 0.154 150.069);
+  --success-foreground: oklch(0.985 0 0);
+  --warning: oklch(0.666 0.179 58.318);
+  --warning-foreground: oklch(0.985 0 0);
+  --info: oklch(0.546 0.245 262.881);
+  --info-foreground: oklch(0.985 0 0);
+}
+
+.dark {
+  --success: oklch(0.723 0.219 149.579);
+  --success-foreground: oklch(0.145 0 0);
+  --warning: oklch(0.769 0.188 70.08);
+  --warning-foreground: oklch(0.145 0 0);
+  --info: oklch(0.707 0.165 254.624);
+  --info-foreground: oklch(0.145 0 0);
+}
+
+/* Soft tints for backgrounds behind status text, derived so a pasted theme
+   only has to set the four colours above. */
+:root, .dark {
+  --success-soft: color-mix(in oklab, var(--success) 14%, transparent);
+  --warning-soft: color-mix(in oklab, var(--warning) 16%, transparent);
+  --info-soft: color-mix(in oklab, var(--info) 14%, transparent);
+  --destructive-soft: color-mix(in oklab, var(--destructive) 14%, transparent);
+}
+
+/* ---- Paste a tweakcn / shadcn theme below this line ---- */

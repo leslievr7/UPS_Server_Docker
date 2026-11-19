@@ -1,0 +1,448 @@
+{% extends "base.html" %}
+{% from "basecoat/tabs.html.jinja" import tabs %}
+{% from "basecoat/dialog.html.jinja" import dialog %}
+{% block title %}Style sample - UPS Server{% endblock %}
+
+{% block extra_head %}
+<style>
+  .sg-controls { position: relative; }
+  .sg-controls .card { box-shadow: 0 8px 24px -12px color-mix(in oklab, var(--foreground) 25%, transparent); }
+  .sg-row { display: flex; flex-wrap: wrap; gap: 1rem; align-items: flex-end; }
+  .sg-row .field { width: auto; min-width: 10rem; }
+  .sg-section { scroll-margin-top: 10rem; }
+  .sg-section > h2 { margin-bottom: 0.25rem; }
+  .sg-section > p.muted { margin-bottom: 1rem; }
+  .sg-swatches { display: grid; gap: 0.75rem; grid-template-columns: repeat(auto-fill, minmax(7.5rem, 1fr)); }
+  .sg-icons { display: grid; gap: 0.5rem; grid-template-columns: repeat(auto-fill, minmax(8.5rem, 1fr)); }
+  .sg-icons div { display: flex; align-items: center; gap: 0.5rem; font-size: 0.75rem; color: var(--muted-foreground); }
+  .sg-icons .icon { color: var(--foreground); }
+  textarea.sg-paste { min-height: 6rem; font-family: var(--font-mono); font-size: 0.75rem; }
+</style>
+<style id="sg-overrides"></style>
+{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Style sample</h1>
+    <p>Every building block of the new look, with fictional data. Sandbox only &mdash; this page does not exist on the real server.</p>
+  </div>
+</div>
+
+<div class="sg-controls">
+  <div class="card" data-size="sm">
+    <section>
+      <div class="sg-row">
+        <div class="field">
+          <label for="sg-style">Style</label>
+          <select id="sg-style" class="select">
+            {% for s in style_packs %}<option value="{{ s }}">{{ s|capitalize }}{% if s == 'vega' %} (shadcn classic){% endif %}</option>{% endfor %}
+          </select>
+        </div>
+        <div class="field">
+          <label for="sg-accent">Accent colour</label>
+          <select id="sg-accent" class="select">
+            <option value="neutral">Neutral (default)</option>
+            <option value="blue">Blue</option>
+            <option value="violet">Violet</option>
+            <option value="green">Green</option>
+            <option value="amber">Amber</option>
+            <option value="orange">Orange</option>
+            <option value="rose">Rose</option>
+          </select>
+        </div>
+        <div class="field">
+          <label for="sg-radius">Corner radius <span class="muted nums" id="sg-radius-value"></span></label>
+          <input id="sg-radius" type="range" min="0" max="1.25" step="0.125" value="0.625">
+        </div>
+        <div class="field">
+          <label>Mode</label>
+          <div class="cluster">
+            <button type="button" class="btn" data-variant="outline" data-size="sm" onclick="setThemeMode('light')">{{ ui.icon('sun') }} Light</button>
+            <button type="button" class="btn" data-variant="outline" data-size="sm" onclick="setThemeMode('dark')">{{ ui.icon('moon') }} Dark</button>
+          </div>
+        </div>
+        <div class="cluster right">
+          <button type="button" class="btn" data-variant="outline" data-size="sm" onclick="document.getElementById('sg-paste-dialog').showModal()">Paste a theme</button>
+          <button type="button" class="btn" data-variant="secondary" data-size="sm" id="sg-copy">{{ ui.icon('copy') }} Copy my choices</button>
+          <button type="button" class="btn" data-variant="ghost" data-size="sm" id="sg-reset">Reset</button>
+        </div>
+      </div>
+    </section>
+  </div>
+</div>
+
+<div class="stack stack-xl" style="margin-top:2rem">
+
+  {# ------------------------------------------------------------------ #}
+  <section class="sg-section" id="banners">
+    <h2>Status banner</h2>
+    <p class="muted">The first thing on the dashboard: one sentence that says whether anything needs attention.</p>
+    <div class="stack">
+      {{ ui.status_banner('Mains power is on', 'All 5 sentinels answered 4 seconds ago. 3 machines protected.', 'success', 'plug-zap') }}
+      {% call ui.status_banner('Power cut — shutting machines down', 'No sentinel has answered since 21:04 (2 min ago). Proxmox host is shutting down; NAS shuts down in 01:44.', 'danger', 'unplug') %}
+        <span class="badge" data-variant="danger">{{ ui.icon('timer') }} 01:44</span>
+      {% endcall %}
+      {{ ui.status_banner('Power is back — waking machines in 3 min', 'Mains returned at 21:19 after 15 minutes. Wake-on-LAN goes out at 21:24.', 'info', 'refresh-cw') }}
+      {% call ui.status_banner('Test mode is on', 'Machines are being told the power is out. Those without “ignore test mode” will shut down.', 'warning', 'flask-conical') %}
+        <button type="button" class="btn" data-variant="outline" data-size="sm">Turn off test mode</button>
+      {% endcall %}
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  <section class="sg-section" id="stats">
+    <h2>Summary tiles</h2>
+    <p class="muted">Key numbers at a glance, below the banner.</p>
+    <div class="grid-auto" style="--min:12rem">
+      {{ ui.stat('Sentinels answering', '5', 'Checked 4 s ago', 'radio-tower', 'of 5') }}
+      {{ ui.stat('Machines protected', '3', '1 without an agent', 'server') }}
+      {{ ui.stat('Battery', '96%', '13.4 V · charging', 'battery-charging') }}
+      {{ ui.stat('Wake-up delay', '1', 'after power returns', 'clock', 'min') }}
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  <section class="sg-section" id="machines">
+    <h2>Machine cards</h2>
+    <p class="muted">One card per protected machine. States shown: online, counting down, no agent, did not wake up.</p>
+    <div class="grid-auto" style="--min:16rem">
+      <article class="machine">
+        <div class="machine-head">
+          <span class="machine-icon">{{ ui.icon('server') }}</span>
+          <div class="machine-title"><h3>Proxmox host</h3><span class="mono">192.0.2.10</span></div>
+          <span class="right">{{ ui.badge('Online', 'success') }}</span>
+        </div>
+        <dl class="machine-meta">
+          <dt>Agent</dt><dd>Checked in 6 s ago</dd>
+          <dt>Shuts down</dt><dd>Immediately</dd>
+        </dl>
+        <div class="machine-foot"><span class="muted small">Wake-on-LAN on</span>
+          <button class="btn right" data-variant="outline" data-size="sm" disabled>{{ ui.icon('power') }} Wake</button></div>
+      </article>
+
+      <article class="machine">
+        <div class="machine-head">
+          <span class="machine-icon">{{ ui.icon('hard-drive') }}</span>
+          <div class="machine-title"><h3>NAS</h3><span class="mono">192.0.2.11</span></div>
+          <span class="right">{{ ui.badge('Shutting down', 'warning', 'timer') }}</span>
+        </div>
+        <div class="stack stack-sm">
+          <div class="spread small"><span class="muted">Shutdown in</span><span class="strong nums">01:44</span></div>
+          <div class="meter"><span style="width:58%"></span></div>
+        </div>
+        <dl class="machine-meta">
+          <dt>Agent</dt><dd>Checked in 3 s ago</dd>
+          <dt>Shuts down</dt><dd>After 2 min</dd>
+        </dl>
+      </article>
+
+      <article class="machine">
+        <div class="machine-head">
+          <span class="machine-icon">{{ ui.icon('cpu') }}</span>
+          <div class="machine-title"><h3>Raspberry Pi</h3><span class="mono">192.0.2.12</span></div>
+          <span class="right">{{ ui.badge('No agent', 'danger', 'wrench') }}</span>
+        </div>
+        <p class="small muted">The machine answers pings, but its UPS script has never checked in, so it won't shut down in a power cut.</p>
+        <dl class="machine-meta">
+          <dt>Shuts down</dt><dd>After 1 min</dd>
+        </dl>
+      </article>
+
+      <article class="machine">
+        <div class="machine-head">
+          <span class="machine-icon">{{ ui.icon('monitor') }}</span>
+          <div class="machine-title"><h3>Media PC</h3><span class="mono">192.0.2.13</span></div>
+          <span class="right">{{ ui.badge('Did not wake up', 'danger', 'triangle-alert') }}</span>
+        </div>
+        <p class="small muted">Wake-on-LAN was sent 12 min ago, but it never answered. Check its MAC address and BIOS wake settings.</p>
+        <div class="machine-foot"><span class="muted small">Wake-on-LAN only</span>
+          <button class="btn right" data-variant="outline" data-size="sm">{{ ui.icon('power') }} Wake again</button></div>
+      </article>
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  <section class="sg-section" id="statuses">
+    <h2>Status labels</h2>
+    <p class="muted">Badges for cards, dots for tables and lists. Colour is never the only signal: every state also has words.</p>
+    <div class="stack">
+      <div class="cluster">
+        {{ ui.badge('Online', 'success', 'circle-check') }}
+        {{ ui.badge('Booting', 'info', 'loader-circle') }}
+        {{ ui.badge('Wake-on-LAN sent', 'info', 'send') }}
+        {{ ui.badge('Shutting down 01:44', 'warning', 'timer') }}
+        {{ ui.badge('Waiting for charge', 'warning', 'battery-low') }}
+        {{ ui.badge('Status stale', 'warning', 'clock') }}
+        {{ ui.badge('Offline', 'danger', 'circle-x') }}
+        {{ ui.badge('No agent', 'danger', 'wrench') }}
+        {{ ui.badge('Auto-wake off', 'muted', 'moon') }}
+        {{ ui.badge('Test mode', 'warning', 'flask-conical') }}
+      </div>
+      <div class="cluster cluster-lg">
+        {{ ui.status('Online', 'success') }}
+        {{ ui.status('Booting', 'info', pulse=True) }}
+        {{ ui.status('Shutting down', 'warning', pulse=True) }}
+        {{ ui.status('Offline', 'danger') }}
+        {{ ui.status('Unknown', 'muted') }}
+      </div>
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  <section class="sg-section" id="type">
+    <h2>Typography</h2>
+    <p class="muted">Geist for text, Geist Mono for addresses and technical values.</p>
+    <div class="card"><section class="stack">
+      <h1>Page title — Dashboard</h1>
+      <h2>Section title — Protected machines</h2>
+      <h3>Card title — Proxmox host</h3>
+      <p>Body text. When mains power goes out, the server tells every protected machine to shut down safely, then wakes them again once power is back.</p>
+      <p class="muted small">Secondary text for hints, timestamps and explanations.</p>
+      <p><span class="mono">192.0.2.10</span> &nbsp; <span class="mono">02:00:00:00:00:10</span> &nbsp; <code>OB LB</code></p>
+    </section></div>
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  <section class="sg-section" id="colours">
+    <h2>Colours</h2>
+    <p class="muted">shadcn's theme colours plus three status colours added for the UPS states.</p>
+    <div class="sg-swatches">
+      {% for name in ['background','card','primary','secondary','muted','accent','border','destructive','success','warning','info'] %}
+        <div class="swatch"><span style="background:var(--{{ name }})"></span><strong>{{ name }}</strong></div>
+      {% endfor %}
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  <section class="sg-section" id="buttons">
+    <h2>Buttons</h2>
+    <p class="muted">Primary for the main action on a page, outline for secondary actions, destructive only for things that shut down or delete.</p>
+    <div class="stack">
+      <div class="cluster">
+        <button class="btn">{{ ui.icon('plus') }} Add machine</button>
+        <button class="btn" data-variant="secondary">Send test email</button>
+        <button class="btn" data-variant="outline">{{ ui.icon('power') }} Wake</button>
+        <button class="btn" data-variant="ghost">Cancel</button>
+        <button class="btn" data-variant="destructive">{{ ui.icon('trash-2') }} Delete</button>
+        <button class="btn" data-variant="link">Learn more</button>
+        <button class="btn" disabled>Disabled</button>
+      </div>
+      <div class="cluster">
+        <button class="btn" data-size="sm">Small</button>
+        <button class="btn">Default</button>
+        <button class="btn" data-size="lg">Large</button>
+        <button class="btn" data-variant="outline" data-size="icon" aria-label="Edit">{{ ui.icon('pencil') }}</button>
+        <button class="btn" data-variant="ghost" data-size="icon" aria-label="Refresh">{{ ui.icon('refresh-cw') }}</button>
+      </div>
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  <section class="sg-section" id="forms">
+    <h2>Form controls</h2>
+    <p class="muted">How the settings page will look: labels above fields, help text below, switches for on/off settings.</p>
+    <div class="grid-2">
+      <div class="card"><section class="stack">
+        <div class="field">
+          <label for="sg-name">Machine name</label>
+          <input class="input" id="sg-name" type="text" value="Proxmox host">
+        </div>
+        <div class="field">
+          <label for="sg-ip">IP address</label>
+          <input class="input mono" id="sg-ip" type="text" value="192.0.2.10">
+          <p>The address the machine's UPS script reports from.</p>
+        </div>
+        <div class="field" data-invalid="true">
+          <label for="sg-mac">MAC address</label>
+          <input class="input mono" id="sg-mac" type="text" value="02:00:00:00:10" aria-invalid="true">
+          <p role="alert">That doesn't look like a MAC address — it should have six pairs, like 02:00:00:00:00:10.</p>
+        </div>
+        <div class="field">
+          <label for="sg-delay">Shut down</label>
+          <select class="select" id="sg-delay">
+            <option>Immediately</option><option>After 1 minute</option><option selected>After 2 minutes</option><option>After 5 minutes</option>
+          </select>
+        </div>
+      </section></div>
+      <div class="card"><section class="stack">
+        <label class="field" data-orientation="horizontal">
+          <section><h3>Wake automatically</h3><p class="muted small">Send Wake-on-LAN when power returns.</p></section>
+          <input type="checkbox" role="switch" class="input" checked>
+        </label>
+        <label class="field" data-orientation="horizontal">
+          <section><h3>Ignore test mode</h3><p class="muted small">Keep this machine running during scheduled tests.</p></section>
+          <input type="checkbox" role="switch" class="input">
+        </label>
+        <label class="field" data-orientation="horizontal">
+          <section><h3>Email me when a machine doesn't wake up</h3></section>
+          <input type="checkbox" class="input" checked>
+        </label>
+        <div class="field">
+          <label for="sg-notes">Notes</label>
+          <textarea class="textarea" id="sg-notes" rows="2">Rack, top shelf</textarea>
+        </div>
+      </section></div>
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  <section class="sg-section" id="alerts">
+    <h2>Alerts</h2>
+    <p class="muted">Messages after saving, warnings and errors.</p>
+    <div class="stack">
+      <div class="alert" data-variant="success">{{ ui.icon('circle-check') }}<h2>Settings saved</h2><section>The watchman picks up changes within 15 seconds.</section></div>
+      <div class="alert" data-variant="info">{{ ui.icon('info') }}<h2>Battery rules are in observe mode</h2><section>They are calculated and shown here, but machines still follow the sentinels.</section></div>
+      <div class="alert" data-variant="warning">{{ ui.icon('triangle-alert') }}<h2>Raspberry Pi has no agent</h2><section>It won't shut down in a power cut until its UPS script is fixed.</section></div>
+      <div class="alert" data-variant="destructive">{{ ui.icon('circle-alert') }}<h2>Couldn't send the test email</h2><section>The mail server refused the login. Check the user name and password.</section></div>
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  <section class="sg-section" id="table">
+    <h2>Table</h2>
+    <p class="muted">For compact lists such as sentinels and schedules.</p>
+    <div class="card"><section>
+      <div class="table-container">
+        <table class="table">
+          <thead><tr><th>Sentinel</th><th>Address</th><th>Status</th><th class="right">Last answer</th></tr></thead>
+          <tbody>
+            <tr><td>Smart plug, hall</td><td class="mono">192.0.2.101</td><td>{{ ui.status('Online', 'success') }}</td><td class="nums">4 s ago</td></tr>
+            <tr><td>Smart plug, kitchen</td><td class="mono">192.0.2.102</td><td>{{ ui.status('Online', 'success') }}</td><td class="nums">4 s ago</td></tr>
+            <tr><td>Wi-Fi bulb</td><td class="mono">192.0.2.103</td><td>{{ ui.status('Offline', 'danger') }}</td><td class="nums">3 min ago</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section></div>
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  <section class="sg-section" id="tabs">
+    <h2>Tabs</h2>
+    <p class="muted">The settings page will be split into tabs like these.</p>
+    {{ tabs(id='sg-tabs', tabsets=[
+      {'tab': 'General', 'panel': '<div class="card"><section><p>Sentinels, timings and network settings.</p></section></div>'},
+      {'tab': 'Machines', 'panel': '<div class="card"><section><p>Add, edit and remove protected machines.</p></section></div>'},
+      {'tab': 'Schedules', 'panel': '<div class="card"><section><p>Planned test outages.</p></section></div>'},
+      {'tab': 'Notifications', 'panel': '<div class="card"><section><p>Email server and which alerts to send.</p></section></div>'},
+      {'tab': 'Security', 'panel': '<div class="card"><section><p>Change the dashboard password.</p></section></div>'},
+    ]) }}
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  <section class="sg-section" id="dialogs">
+    <h2>Dialog and toast</h2>
+    <p class="muted">Confirmations for anything risky; small pop-up notices for quick feedback.</p>
+    <div class="cluster">
+      {% call dialog(id='sg-test-dialog', trigger=ui.icon('flask-conical') ~ ' Turn on test mode',
+                     trigger_attrs={'class': 'btn', 'data-variant': 'outline'},
+                     title='Turn on test mode?',
+                     description='Machines will be told the power is out.',
+                     footer='<button class="btn" data-variant="outline" onclick="this.closest(\'dialog\').close()">Cancel</button><button class="btn" data-variant="destructive" onclick="this.closest(\'dialog\').close()">Turn on test mode</button>') %}
+        <p class="small">Proxmox host and NAS will start shutting down. Raspberry Pi ignores test mode and keeps running.</p>
+      {% endcall %}
+      <button class="btn" data-variant="outline" id="sg-toast">Show a toast</button>
+    </div>
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  <section class="sg-section" id="empty">
+    <h2>Empty state</h2>
+    {% call ui.empty_state('No schedules yet', 'Schedules run a pretend power cut at a set time, to check everything shuts down as expected.', 'calendar-clock') %}
+      <button class="btn" data-size="sm">{{ ui.icon('plus') }} Add schedule</button>
+    {% endcall %}
+  </section>
+
+  {# ------------------------------------------------------------------ #}
+  <section class="sg-section" id="icons">
+    <h2>Icons</h2>
+    <p class="muted">Lucide, the icon set shadcn uses. Only these are included in the app.</p>
+    <div class="sg-icons">
+      {% for name in ['zap','plug-zap','unplug','power','power-off','server','hard-drive','monitor','cpu','radio-tower','activity','battery-charging','battery-full','battery-low','battery-warning','flask-conical','send','wrench','wifi-off','circle-check','circle-alert','triangle-alert','circle-x','info','loader-circle','clock','timer','history','calendar-clock','layout-dashboard','settings','lock','key-round','shield-check','log-out','mail','bell','plus','pencil','trash-2','refresh-cw','copy','eye','eye-off','sun','moon','laptop'] %}
+        <div>{{ ui.icon(name, 'lg') }}{{ name }}</div>
+      {% endfor %}
+    </div>
+  </section>
+</div>
+
+<div id="toaster" class="toaster"></div>
+
+<dialog id="sg-paste-dialog" class="dialog" aria-labelledby="sg-paste-title">
+  <div>
+    <header><h2 id="sg-paste-title">Paste a theme</h2>
+      <p>From tweakcn.com or ui.shadcn.com/themes: copy the CSS (the <code>:root</code> and <code>.dark</code> blocks) and paste it here.</p></header>
+    <section><textarea class="textarea sg-paste" id="sg-paste"></textarea></section>
+    <footer>
+      <button class="btn" data-variant="outline" onclick="this.closest('dialog').close()">Cancel</button>
+      <button class="btn" id="sg-paste-apply">Apply</button>
+    </footer>
+  </div>
+</dialog>
+{% endblock %}
+
+{% block extra_scripts %}
+<script>
+(function () {
+  var ACCENTS = {
+    neutral: null,
+    blue:   { l: ['oklch(0.546 0.245 262.881)', 'oklch(0.97 0.014 254.604)'], d: ['oklch(0.623 0.214 259.815)', 'oklch(0.97 0.014 254.604)'] },
+    violet: { l: ['oklch(0.541 0.281 293.009)', 'oklch(0.969 0.016 293.756)'], d: ['oklch(0.606 0.25 292.717)', 'oklch(0.969 0.016 293.756)'] },
+    green:  { l: ['oklch(0.648 0.2 131.684)', 'oklch(0.986 0.031 120.757)'], d: ['oklch(0.648 0.2 131.684)', 'oklch(0.986 0.031 120.757)'] },
+    amber:  { l: ['oklch(0.769 0.188 70.08)', 'oklch(0.279 0.077 45.635)'], d: ['oklch(0.769 0.188 70.08)', 'oklch(0.279 0.077 45.635)'] },
+    orange: { l: ['oklch(0.646 0.222 41.116)', 'oklch(0.98 0.016 73.684)'], d: ['oklch(0.705 0.213 47.604)', 'oklch(0.98 0.016 73.684)'] },
+    rose:   { l: ['oklch(0.586 0.253 17.585)', 'oklch(0.969 0.015 12.422)'], d: ['oklch(0.645 0.246 16.439)', 'oklch(0.969 0.015 12.422)'] }
+  };
+  var KEY = 'upsStyleguide';
+  var style = document.getElementById('sg-style');
+  var accent = document.getElementById('sg-accent');
+  var radius = document.getElementById('sg-radius');
+  var radiusValue = document.getElementById('sg-radius-value');
+  var overrides = document.getElementById('sg-overrides');
+  var link = document.getElementById('basecoat-css');
+  var defaultHref = link.getAttribute('href');
+  var state = { style: 'vega', accent: 'neutral', radius: '0.625', pasted: '' };
+  try { Object.assign(state, JSON.parse(localStorage.getItem(KEY) || '{}')); } catch (e) {}
+
+  function render() {
+    style.value = state.style; accent.value = state.accent; radius.value = state.radius;
+    radiusValue.textContent = state.radius + 'rem';
+    link.setAttribute('href', state.style === 'vega' ? defaultHref : '/dev/basecoat-style/' + state.style + '.css');
+    var css = '', a = ACCENTS[state.accent];
+    if (a) {
+      css += ':root{--primary:' + a.l[0] + ';--primary-foreground:' + a.l[1] + ';--ring:' + a.l[0] + ';}';
+      css += '.dark{--primary:' + a.d[0] + ';--primary-foreground:' + a.d[1] + ';--ring:' + a.d[0] + ';}';
+    }
+    css += ':root{--radius:' + state.radius + 'rem;}';
+    overrides.textContent = (state.pasted || '') + '\n' + css;
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+  }
+
+  style.onchange = function () { state.style = style.value; render(); };
+  accent.onchange = function () { state.accent = accent.value; render(); };
+  radius.oninput = function () { state.radius = radius.value; render(); };
+  document.getElementById('sg-reset').onclick = function () {
+    state = { style: 'vega', accent: 'neutral', radius: '0.625', pasted: '' }; render();
+  };
+  document.getElementById('sg-paste-apply').onclick = function () {
+    state.pasted = document.getElementById('sg-paste').value;
+    this.closest('dialog').close(); render();
+  };
+  document.getElementById('sg-copy').onclick = function () {
+    var text = 'Style: ' + state.style + '\nAccent: ' + state.accent + '\nRadius: ' + state.radius + 'rem' +
+               '\nMode: ' + (document.documentElement.dataset.themeMode || 'system') +
+               (state.pasted ? '\nPasted theme: yes (' + state.pasted.length + ' characters)' : '');
+    (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(
+      function () { toast('Copied', 'Paste it into the chat with Claude.'); },
+      function () { window.prompt('Copy this and paste it into the chat:', text); });
+  };
+  function toast(title, description) {
+    var t = document.getElementById('toaster');
+    if (t && t.toast) t.toast({ category: 'success', title: title, description: description });
+  }
+  document.getElementById('sg-toast').onclick = function () {
+    toast('Wake-on-LAN sent to Media PC', 'It should answer within a minute or two.');
+  };
+  render();
+})();
+</script>
+{% endblock %}

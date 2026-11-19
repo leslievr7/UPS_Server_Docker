@@ -1,0 +1,53 @@
+{#
+  Small UI building blocks shared by every page.
+  Import with: {% import "_ui.html" as ui %}
+#}
+
+{# An icon from the local Lucide sprite. size: "", "lg" or "xl". #}
+{% macro icon(name, size="", cls="", label=None) -%}
+<svg class="icon{% if size %} icon-{{ size }}{% endif %}{% if cls %} {{ cls }}{% endif %}"
+     {% if label %}role="img" aria-label="{{ label }}"{% else %}aria-hidden="true"{% endif %}>
+  <use href="{{ url_for('static', filename='icons/lucide.svg') }}#{{ name }}"></use>
+</svg>
+{%- endmacro %}
+
+{# A pill-shaped status label. tone: success, warning, info, danger, muted. #}
+{% macro badge(label, tone="muted", icon_name=None) -%}
+<span class="badge" data-variant="{{ tone }}">{% if icon_name %}{{ icon(icon_name) }}{% endif %}{{ label }}</span>
+{%- endmacro %}
+
+{# A coloured dot plus label, for tables and dense lists. #}
+{% macro status(label, tone="muted", pulse=False) -%}
+<span class="status" data-tone="{{ tone }}"{% if pulse %} data-pulse{% endif %}>{{ label }}</span>
+{%- endmacro %}
+
+{# A single number with a label, for summary rows. #}
+{% macro stat(label, value, hint=None, icon_name=None, suffix=None, id=None) -%}
+<div class="stat"{% if id %} id="{{ id }}"{% endif %}>
+  <span class="stat-label">{% if icon_name %}{{ icon(icon_name) }}{% endif %}{{ label }}</span>
+  <span class="stat-value" data-value>{{ value }}{% if suffix %} <small>{{ suffix }}</small>{% endif %}</span>
+  {% if hint %}<span class="stat-hint" data-hint>{{ hint }}</span>{% endif %}
+</div>
+{%- endmacro %}
+
+{# The banner that answers "is everything OK?". tone: success, warning, danger, info. #}
+{% macro status_banner(title, text, tone="success", icon_name="plug-zap", id=None) -%}
+<div class="status-banner" data-tone="{{ tone }}"{% if id %} id="{{ id }}"{% endif %} role="status" aria-live="polite">
+  <span class="status-banner-icon">{{ icon(icon_name) }}</span>
+  <div class="stack stack-sm" style="--gap:0.125rem">
+    <h2 data-title>{{ title }}</h2>
+    <p data-text>{{ text }}</p>
+  </div>
+  {% if caller is defined %}<div class="actions">{{ caller() }}</div>{% endif %}
+</div>
+{%- endmacro %}
+
+{# Shown when a list has nothing in it yet. #}
+{% macro empty_state(title, text, icon_name="circle-dot") -%}
+<div class="empty-state">
+  {{ icon(icon_name) }}
+  <h3>{{ title }}</h3>
+  <p>{{ text }}</p>
+  {% if caller is defined %}<div class="cluster">{{ caller() }}</div>{% endif %}
+</div>
+{%- endmacro %}

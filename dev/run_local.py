@@ -606,6 +606,9 @@ def main():
 
     import web_gui
     remap(web_gui)
+    # Pick up template edits without restarting the sandbox.
+    web_gui.app.config['TEMPLATES_AUTO_RELOAD'] = True
+    web_gui.app.jinja_env.auto_reload = True
 
     global WORLD
     WORLD = World()

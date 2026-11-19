@@ -1,330 +1,100 @@
+{% import "_ui.html" as ui %}
 <!DOCTYPE html>
 <html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{% block title %}UPS Power Management Server{% endblock %}</title>
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/css/bootstrap.min.css" rel="stylesheet">
-    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-    <style>
-        :root {
-            --primary-color: #2c3e50;
-            --secondary-color: #3498db;
-            --success-color: #27ae60;
-            --danger-color: #e74c3c;
-            --warning-color: #f39c12;
-            --info-color: #17a2b8;
-            --light-color: #ecf0f1;
-            --dark-color: #2c3e50;
-        }
-        
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: #f8f9fa;
-        }
-        
-        .navbar {
-            background: linear-gradient(135deg, var(--primary-color), var(--secondary-color));
-            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
-        }
-        
-        .navbar-brand {
-            font-weight: 700;
-            font-size: 1.4rem;
-        }
-        
-        .card {
-            border: none;
-            border-radius: 15px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            transition: transform 0.2s ease;
-        }
-        
-        .card:hover {
-            transform: translateY(-2px);
-        }
-        
-        .card-header {
-            background: linear-gradient(135deg, var(--light-color), #ffffff);
-            border-bottom: 2px solid var(--secondary-color);
-            border-radius: 15px 15px 0 0 !important;
-            font-weight: 600;
-        }
-        
-        .status-online {
-            color: var(--success-color);
-        }
-        
-        .status-offline {
-            color: var(--danger-color);
-        }
-        
-        /* Every one of these labels is an icon followed by a short caption.
-           In a narrow column the space between them is a break opportunity,
-           which left the icon stranded on its own line. */
-        .status-online,
-        .status-offline {
-            white-space: nowrap;
-        }
-        
-        /* The same column also carries the transient states as badges
-           ("Shutting Down...", "Waiting for charge"), which wrapped the same
-           way. The countdown badge keeps its progress bar on the line below,
-           so only the badge itself is held together. */
-        .client-status-cell .badge {
-            white-space: nowrap;
-        }
-        
-        /* The ping tables put the coloured dot and the caption in two separate
-           inline elements, so nowrap on the caption alone still let the line
-           break right after the dot - which is how "Online" ended up below its
-           own indicator in the narrow sentinel column. Hold the whole cell. */
-        .ping-status-cell {
-            white-space: nowrap;
-        }
-        
-        .btn-primary {
-            background: linear-gradient(135deg, var(--secondary-color), #5dade2);
-            border: none;
-            border-radius: 25px;
-            padding: 8px 20px;
-            font-weight: 500;
-            transition: all 0.3s ease;
-        }
-        
-        .btn-primary:hover {
-            transform: translateY(-1px);
-            box-shadow: 0 5px 15px rgba(52, 152, 219, 0.4);
-        }
-        
-        .btn-success {
-            background: linear-gradient(135deg, var(--success-color), #58d68d);
-            border: none;
-            border-radius: 25px;
-        }
-        
-        .btn-danger {
-            background: linear-gradient(135deg, var(--danger-color), #ec7063);
-            border: none;
-            border-radius: 25px;
-        }
-        
-        .btn-warning {
-            background: linear-gradient(135deg, var(--warning-color), #f7dc6f);
-            border: none;
-            border-radius: 25px;
-            color: white;
-        }
-        
-        .form-control {
-            border-radius: 10px;
-            border: 2px solid #e9ecef;
-            transition: border-color 0.3s ease;
-        }
-        
-        .form-control:focus {
-            border-color: var(--secondary-color);
-            box-shadow: 0 0 0 0.2rem rgba(52, 152, 219, 0.25);
-        }
-        
-        .alert {
-            border-radius: 10px;
-            border: none;
-        }
-        
-        .table {
-            border-radius: 10px;
-            overflow: hidden;
-        }
-        
-        .table th {
-            background: linear-gradient(135deg, var(--light-color), #ffffff);
-            font-weight: 600;
-            border: none;
-        }
-        
-        .badge {
-            border-radius: 20px;
-            font-size: 0.8em;
-            padding: 5px 12px;
-        }
-        
-        .mobile-responsive {
-            overflow-x: auto;
-        }
-        
-        @media (max-width: 768px) {
-            .card {
-                margin-bottom: 1rem;
-            }
-            
-            .table-responsive {
-                font-size: 0.9rem;
-            }
-            
-            .btn {
-                padding: 6px 12px;
-                font-size: 0.9rem;
-            }
-            
-            /* Mobile-specific System Overview */
-            .system-overview-mobile .col-md-3 {
-                flex: 0 0 50%;
-                max-width: 50%;
-            }
-            
-            /* Mobile table styles - convert table to card layout */
-            .mobile-table {
-                display: none;
-            }
-            
-            .mobile-cards {
-                display: block;
-            }
-            
-            .mobile-card {
-                background: #fff;
-                border: 1px solid #dee2e6;
-                border-radius: 8px;
-                margin-bottom: 1rem;
-                padding: 1rem;
-                box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-            }
-            
-            .mobile-card-header {
-                font-weight: 600;
-                color: var(--primary-color);
-                margin-bottom: 0.5rem;
-                padding-bottom: 0.5rem;
-                border-bottom: 1px solid #eee;
-            }
-            
-            .mobile-card-row {
-                display: flex;
-                justify-content: space-between;
-                align-items: center;
-                margin-bottom: 0.3rem;
-                padding: 0.2rem 0;
-            }
-            
-            .mobile-card-label {
-                font-weight: 500;
-                color: #666;
-                font-size: 0.9rem;
-            }
-            
-            .mobile-card-value {
-                font-size: 0.9rem;
-            }
-            
-            .mobile-card-actions {
-                margin-top: 0.75rem;
-                padding-top: 0.75rem;
-                border-top: 1px solid #eee;
-                text-align: right;
-            }
-        }
-        
-        @media (min-width: 769px) {
-            .mobile-table {
-                display: table;
-            }
-            
-            .mobile-cards {
-                display: none;
-            }
-        }
-        
-        .loading {
-            opacity: 0.6;
-            pointer-events: none;
-        }
-        
-        .status-indicator {
-            display: inline-block;
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            margin-right: 8px;
-        }
-        
-        .status-indicator.online {
-            background-color: var(--success-color);
-            animation: pulse-green 2s infinite;
-        }
-        
-        .status-indicator.offline {
-            background-color: var(--danger-color);
-        }
-        
-        @keyframes pulse-green {
-            0% { box-shadow: 0 0 0 0 rgba(39, 174, 96, 0.7); }
-            70% { box-shadow: 0 0 0 10px rgba(39, 174, 96, 0); }
-            100% { box-shadow: 0 0 0 0 rgba(39, 174, 96, 0); }
-        }
-        
-        .config-section {
-            background: white;
-            border-radius: 15px;
-            padding: 1.5rem;
-            margin-bottom: 1.5rem;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-        }
-        
-        .section-title {
-            color: var(--primary-color);
-            font-weight: 600;
-            margin-bottom: 1rem;
-            border-bottom: 2px solid var(--secondary-color);
-            padding-bottom: 0.5rem;
-        }
-    </style>
-    {% block extra_head %}{% endblock %}
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <title>{% block title %}UPS Server{% endblock %}</title>
+  <script>
+    /* Apply the saved theme before the page paints, so there is no white flash. */
+    (function () {
+      var mode = 'system';
+      try { mode = localStorage.getItem('upsThemeMode') || 'system'; } catch (e) {}
+      var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+      document.documentElement.classList.toggle('dark', dark);
+    })();
+  </script>
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f59e0b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z'/%3E%3C/svg%3E">
+  <link rel="stylesheet" id="basecoat-css" href="{{ url_for('static', filename='vendor/basecoat/basecoat.min.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/theme.css') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='css/app.css') }}">
+  {% block extra_head %}{% endblock %}
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark">
-        <div class="container">
-            <a class="navbar-brand" href="{{ url_for('index') }}">
-                <i class="fas fa-bolt me-2"></i>UPS Server Manager
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav ms-auto">
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('index') }}">
-                            <i class="fas fa-tachometer-alt me-1"></i>Dashboard
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link" href="{{ url_for('config') }}">
-                            <i class="fas fa-cog me-1"></i>Configuration
-                        </a>
-                    </li>
-                </ul>
+  {% set active = request.endpoint or '' %}
+  <header class="app-header">
+    <div class="container">
+      <a class="brand" href="{{ url_for('index') }}">
+        <span class="brand-mark">{{ ui.icon('zap') }}</span>
+        <span class="brand-name">UPS Server</span>
+      </a>
+
+      <nav class="app-nav" aria-label="Main">
+        <a href="{{ url_for('index') }}" {% if active == 'index' %}aria-current="page"{% endif %}>
+          {{ ui.icon('layout-dashboard') }}<span>Dashboard</span>
+        </a>
+        <a href="{{ url_for('config') }}" {% if active == 'config' %}aria-current="page"{% endif %}>
+          {{ ui.icon('settings') }}<span>Settings</span>
+        </a>
+      </nav>
+
+      <div class="header-actions">
+        {% block header_actions %}{% endblock %}
+        <div id="theme-menu" class="dropdown-menu">
+          <button type="button" id="theme-menu-trigger" class="btn" data-variant="ghost" data-size="icon"
+                  aria-haspopup="menu" aria-controls="theme-menu-menu" aria-expanded="false" aria-label="Colour theme">
+            <span data-theme-icon="light">{{ ui.icon('sun') }}</span>
+            <span data-theme-icon="dark" hidden>{{ ui.icon('moon') }}</span>
+            <span data-theme-icon="system" hidden>{{ ui.icon('laptop') }}</span>
+          </button>
+          <div id="theme-menu-popover" data-popover aria-hidden="true" data-align="end">
+            <div role="menu" id="theme-menu-menu" aria-labelledby="theme-menu-trigger">
+              <div role="menuitemradio" data-theme-option="light" aria-checked="false">{{ ui.icon('sun') }} Light</div>
+              <div role="menuitemradio" data-theme-option="dark" aria-checked="false">{{ ui.icon('moon') }} Dark</div>
+              <div role="menuitemradio" data-theme-option="system" aria-checked="false">{{ ui.icon('laptop') }} Same as device</div>
             </div>
+          </div>
         </div>
-    </nav>
-
-    <div class="container mt-4">
-        <!-- Flash Messages -->
-        {% with messages = get_flashed_messages(with_categories=true) %}
-            {% if messages %}
-                {% for category, message in messages %}
-                    <div class="alert alert-{{ 'danger' if category == 'error' else category }} alert-dismissible fade show" role="alert">
-                        <i class="fas fa-{{ 'exclamation-triangle' if category == 'error' else 'check-circle' if category == 'success' else 'info-circle' }} me-2"></i>
-                        {{ message }}
-                        <button type="button" class="btn-close" data-bs-dismiss="alert"></button>
-                    </div>
-                {% endfor %}
-            {% endif %}
-        {% endwith %}
-
-        {% block content %}{% endblock %}
+      </div>
     </div>
+  </header>
 
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/bootstrap/5.3.0/js/bootstrap.bundle.min.js"></script>
-    {% block extra_scripts %}{% endblock %}
+  <main class="app-main">
+    <div class="container">
+      {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+          <div class="flash-stack">
+            {% for category, message in messages %}
+              {% set tone = {'error': 'destructive', 'danger': 'destructive', 'success': 'success',
+                             'warning': 'warning', 'info': 'info'}.get(category, 'info') %}
+              {% set glyph = {'destructive': 'circle-alert', 'success': 'circle-check',
+                              'warning': 'triangle-alert'}.get(tone, 'info') %}
+              <div class="alert" data-variant="{{ tone }}" role="{{ 'alert' if tone == 'destructive' else 'status' }}">
+                {{ ui.icon(glyph) }}
+                <h2>{{ message }}</h2>
+              </div>
+            {% endfor %}
+          </div>
+        {% endif %}
+      {% endwith %}
+
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+
+  <footer class="app-footer">
+    <div class="container spread">
+      <span>UPS Server{% if version_info %} &middot; <span class="mono">{{ version_info.version_string }}</span>{% endif %}</span>
+      <span>Based on <a href="https://github.com/MarekWo/UPS_Server_Docker">UPS_Server_Docker</a> by MarekWo</span>
+    </div>
+  </footer>
+
+  <script src="{{ url_for('static', filename='vendor/basecoat/basecoat.min.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='vendor/basecoat/dropdown-menu.min.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='vendor/basecoat/tabs.min.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='vendor/basecoat/toast.min.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='js/app.js') }}"></script>
+  {% block extra_scripts %}{% endblock %}
 </body>
 </html>

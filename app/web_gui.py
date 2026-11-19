@@ -42,6 +42,12 @@ except ImportError:
 app = Flask(__name__)
 app.secret_key = 'ups_server_gui_secret_key_change_in_production'
 
+
+@app.context_processor
+def inject_version_info():
+    """Every page shows the version in its footer."""
+    return {'version_info': get_version_info()}
+
 # --- Configuration ---
 POWER_MANAGER_CONFIG = "/etc/nut/power_manager.conf"
 PING_CMD = "/bin/ping"

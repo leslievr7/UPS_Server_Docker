@@ -37,3 +37,5 @@ docs/reddit-*.md
 .claude/
 # Sandbox runtime folder (dev/run_local.py)
 dev/.sandbox/
+# Alternative Basecoat style packs for the style sample page (copied from the npm package)
+dev/.styles/
