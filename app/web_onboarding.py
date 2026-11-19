@@ -151,6 +151,23 @@ def register(app, gui):
             mac = found.get(ip) or old_macs.get(ip)
             if mac and not network_scan.is_private_mac(mac):
                 macs[ip] = mac
+        # Remember what each one is, so the dashboard can show names, not just addresses.
+        shown = network_scan.describe(network_scan.status(), config, wake_hosts)
+        by_ip = {e['ip']: e for e in shown['good'] + shown['unsuitable']}
+        old_names = network_scan.parse_sentinel_names(config.get('SENTINEL_NAMES'))
+        names = {}
+        for ip in chosen:
+            e = by_ip.get(ip)
+            if e and not e.get('missing'):
+                names[ip] = {'title': '' if e['title'] == ip else e['title'], 'icon': e['icon'],
+                             'maker': e.get('maker', '')}
+            elif ip in old_names:
+                names[ip] = old_names[ip]
+        formatted = network_scan.format_sentinel_names(names)
+        if formatted:
+            config['SENTINEL_NAMES'] = formatted
+        else:
+            config.pop('SENTINEL_NAMES', None)
         config['SENTINEL_HOSTS'] = ' '.join(chosen)
         if macs:
             config['SENTINEL_MACS'] = network_scan.format_sentinel_macs(macs)
@@ -180,6 +197,10 @@ def register(app, gui):
         if old in macs:
             macs[new] = macs.pop(old)
             config['SENTINEL_MACS'] = network_scan.format_sentinel_macs(macs)
+        names = network_scan.parse_sentinel_names(config.get('SENTINEL_NAMES'))
+        if old in names:
+            names[new] = names.pop(old)
+            config['SENTINEL_NAMES'] = network_scan.format_sentinel_names(names)
         gui.write_power_manager_config(config, wake_hosts, schedules)
         flash(f"Now watching {new} instead of {old}.", 'success')
         return redirect(url_for('index'))

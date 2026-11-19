@@ -33,6 +33,7 @@ DEVICES = {
     '192.0.2.41': ('6a:0c:11:10:00:41', 'Galaxy-S24', True, True),
     '192.0.2.42': ('00:03:93:10:00:42', 'macbook-air', True, True),
     '192.0.2.50': ('00:1b:a9:10:00:50', '', True, False),
+    '192.0.2.61': ('9c:00:00:10:00:61', '', True, False),  # no name, unknown maker
     # The sandbox config's sentinels. They exist even in --first-run mode,
     # before anything watches them.
     '192.0.2.101': ('00:4b:12:10:01:01', 'esp-plug-hall', True, False),

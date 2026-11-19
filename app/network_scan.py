@@ -499,6 +499,7 @@ def describe(state, config, wake_hosts):
     """
     state = state or {}
     current = configured_sentinels(config)
+    saved = parse_sentinel_names(config.get('SENTINEL_NAMES'))
     ups_ips = {h.get('IP'): h.get('NAME') or 'A protected machine' for h in wake_hosts.values()
                if h.get('IP')}
     own, gateway = state.get('server_ip'), state.get('gateway_ip')
@@ -524,21 +525,28 @@ def describe(state, config, wake_hosts):
         elif not dev.get('replied') and not dev.get('missing'):
             reason = "Doesn't answer pings"
 
-        # A name the network knows, else "<maker> <kind>" ("Brother printer"), else the kind.
+        # The name the network knows; else "<maker> <kind>" ("Brother printer");
+        # else what was saved when it was picked; else just the address.
+        remembered = saved.get(ip, {})
+        maker = dev.get('maker') or remembered.get('maker', '')
+        icon = KIND_ICONS.get(kind, 'circle-dot')
         title = dev.get('name') or (ups_ips.get(ip) if ip in ups_ips else '')
         detail = ''
         if title:
-            parts = [dev.get('maker') or '']
+            parts = [maker]
             if kind in KIND_LABELS and kind:
                 parts.append(KIND_LABELS[kind])
             detail = ' · '.join(p for p in parts if p)
         elif dev.get('maker'):
             title = f"{dev['maker']} {KIND_NOUNS.get(kind if kind != 'personal' else '', 'device')}"
+        elif remembered.get('title'):
+            title = remembered['title']
+            icon = remembered.get('icon') or icon
         else:
-            title = KIND_LABELS.get(kind, 'Device') if kind != 'personal' else 'Phone or laptop'
+            title = ip
 
         entry = {'ip': ip, 'mac': dev.get('mac') or '', 'title': title, 'detail': detail,
-                 'icon': KIND_ICONS.get(kind, 'circle-dot'), 'current': ip in current,
+                 'maker': maker, 'icon': icon, 'current': ip in current,
                  'missing': bool(dev.get('missing')), 'reason': reason,
                  'rank': KIND_ORDER.index(kind) if kind in KIND_ORDER else len(KIND_ORDER)}
         (good if reason is None or entry['current'] else unsuitable).append(entry)
@@ -568,6 +576,48 @@ def parse_sentinel_macs(value):
 
 def format_sentinel_macs(macs):
     return ' '.join(f'{ip}={mac}' for ip, mac in macs.items() if ip and mac)
+
+
+def _clean_label(text):
+    """Safe inside one quoted config value: no quotes or separators, one line, short."""
+    text = re.sub(r'["\'|;=\r\n\t]', ' ', str(text or ''))
+    return ' '.join(text.split())[:60]
+
+
+def parse_sentinel_names(value):
+    """'192.0.2.5=Hall plug|plug|Espressif;...' -> {ip: {'title', 'icon', 'maker'}}."""
+    out = {}
+    for item in (value or '').split(';'):
+        ip, _, rest = item.strip().partition('=')
+        if not ip or not rest:
+            continue
+        title, icon, maker = (rest.split('|') + ['', '', ''])[:3]
+        out[ip] = {'title': title, 'icon': icon if icon in KIND_ICONS.values() else 'circle-dot',
+                   'maker': maker}
+    return out
+
+
+def format_sentinel_names(names):
+    parts = []
+    for ip, n in names.items():
+        title, icon, maker = _clean_label(n.get('title')), n.get('icon') or '', _clean_label(n.get('maker'))
+        if icon not in KIND_ICONS.values():
+            icon = 'circle-dot'
+        if title or maker or icon != 'circle-dot':
+            parts.append(f'{ip}={title}|{icon}|{maker}')
+    return ';'.join(parts)
+
+
+def sentinel_labels(config):
+    """What the dashboard shows for each sentinel: {ip: {'title', 'icon', 'maker', 'mac'}}."""
+    names = parse_sentinel_names(config.get('SENTINEL_NAMES'))
+    macs = parse_sentinel_macs(config.get('SENTINEL_MACS'))
+    out = {}
+    for ip in configured_sentinels(config):
+        n = names.get(ip, {})
+        out[ip] = {'title': n.get('title', ''), 'icon': n.get('icon', 'circle-dot'),
+                   'maker': n.get('maker', ''), 'mac': macs.get(ip, '')}
+    return out
 
 
 def address_changes(config, table=None):

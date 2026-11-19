@@ -14,6 +14,7 @@ import ipaddress
 import json
 import smtplib
 import re
+from datetime import datetime
 from email.mime.text import MIMEText
 from email.utils import formataddr
 from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, make_response, g, has_request_context
@@ -362,6 +363,7 @@ def config():
                              wake_hosts=wake_hosts,
                              ups_clients=ups_clients,
                              schedules=schedules,
+                             schedules_past=[k for k, s in schedules.items() if one_time_is_past(s)],
                              version_info=get_version_info())
     except Exception as e:
         app.logger.error(f"Error in config route: {str(e)}", exc_info=True)
@@ -565,7 +567,18 @@ def delete_wake_host(section):
 DAYS = ('monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday')
 
 
-def schedule_problem():
+def one_time_is_past(schedule, now=None):
+    """True for a one-time schedule whose date and time have already gone by."""
+    if schedule.get('TYPE') != 'one-time':
+        return False
+    try:
+        when = datetime.strptime(f"{schedule.get('DATE', '')} {schedule.get('TIME', '')}", '%Y-%m-%d %H:%M')
+    except ValueError:
+        return True
+    return when <= (now or datetime.now())
+
+
+def schedule_problem(enabling=True):
     """A plain-words reason the submitted schedule can't be saved, or None."""
     form = request.form
     if not form.get('name', '').strip():
@@ -577,6 +590,9 @@ def schedule_problem():
     if form.get('type') == 'one-time':
         if not re.match(r'^\d{4}-\d{2}-\d{2}$', form.get('date', '')):
             return 'Pick a date.'
+        if enabling and one_time_is_past({'TYPE': 'one-time', 'DATE': form.get('date'),
+                                          'TIME': form.get('time')}):
+            return 'Pick a date and time in the future.'
     elif form.get('type') == 'recurring':
         if form.get('day_of_week') not in DAYS:
             return 'Pick a day of the week.'
@@ -605,9 +621,9 @@ def add_schedule():
             'TYPE': request.form.get('type'),
             'TIME': request.form.get('time'),
             'ACTION': request.form.get('action'),
-            'ENABLED': 'true' if 'enabled' in request.form else 'false'
+            'ENABLED': 'true',  # new schedules start active; pause them from the list
         }
-        
+
         if new_schedule['TYPE'] == 'one-time':
             new_schedule['DATE'] = request.form.get('date')
         else:
@@ -631,7 +647,10 @@ def edit_schedule(section):
             flash("That schedule doesn't exist any more.", 'error')
             return redirect(url_for('config') + '#schedules')
             
-        problem = schedule_problem()
+        # Pausing happens in the list; the pop-up only turns a schedule back on
+        # when it was opened to pick a new date for a one-time schedule that ran.
+        enabling = request.form.get('enable') == '1' or schedules[section].get('ENABLED') == 'true'
+        problem = schedule_problem(enabling)
         if problem:
             flash(problem + ' Nothing was saved.', 'error')
             return redirect(url_for('config') + '#schedules')
@@ -641,7 +660,7 @@ def edit_schedule(section):
             'TYPE': request.form.get('type'),
             'TIME': request.form.get('time'),
             'ACTION': request.form.get('action'),
-            'ENABLED': 'true' if 'enabled' in request.form else 'false'
+            'ENABLED': 'true' if enabling else 'false',
         }
 
         # Clear old type-specific fields before updating

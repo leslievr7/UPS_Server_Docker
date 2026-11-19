@@ -15,6 +15,8 @@ Tones map to colours in the theme: success (green), warning (amber), danger
 
 from datetime import datetime, timedelta, timezone
 
+import network_scan
+
 WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
 
 
@@ -423,7 +425,10 @@ def build_dashboard(config, wake_hosts, schedules, power_state, client_statuses,
     now_local = now_local or datetime.now()
 
     sentinel_ips = [ip.strip('"\'') for ip in config.get('SENTINEL_HOSTS', '').split() if ip.strip('"\'')]
-    sentinels = [{'ip': ip, 'up': bool(reach_sentinels.get(ip))} for ip in sentinel_ips]
+    labels = network_scan.sentinel_labels(config)
+    sentinels = [dict({'title': '', 'icon': 'circle-dot', 'maker': '', 'mac': ''}, **labels.get(ip, {}),
+                      ip=ip, up=bool(reach_sentinels.get(ip)))
+                 for ip in sentinel_ips]
     sentinels_online = sum(1 for s in sentinels if s['up'])
     sentinels_total = len(sentinels)
     power_cut = sentinels_total > 0 and sentinels_online == 0 and power_state is not None

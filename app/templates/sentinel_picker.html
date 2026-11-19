@@ -105,9 +105,10 @@
     }
     var ic = el('span', 'pick-icon'); ic.appendChild(icon(entry.icon)); r.appendChild(ic);
     var text = el('span', 'pick-text');
-    text.appendChild(el('span', 'pick-title', entry.title));
+    text.appendChild(el('span', entry.title === entry.ip ? 'pick-title mono' : 'pick-title', entry.title));
     var meta = el('span', 'pick-meta');
-    meta.appendChild(el('span', 'mono', entry.ip));
+    // A device the network has no name for is shown by its address alone.
+    if (entry.title !== entry.ip) meta.appendChild(el('span', 'mono', entry.ip));
     if (entry.mac) meta.appendChild(el('span', 'mono pick-mac', entry.mac));
     if (entry.detail) meta.appendChild(el('span', '', entry.detail));
     text.appendChild(meta);
@@ -229,7 +230,7 @@
     selected[ip] = true; seen[ip] = true;
     var known = last.good.some(function (e) { return e.ip === ip; }) ||
                 manual.some(function (e) { return e.ip === ip; });
-    if (!known) manual.push({ ip: ip, mac: '', title: 'Added by hand', detail: '', icon: 'circle-dot',
+    if (!known) manual.push({ ip: ip, mac: '', title: ip, detail: '', icon: 'circle-dot',
                               current: false, missing: false, reason: null, manual: true });
     var box = good.querySelector('input[value="' + ip + '"]');
     if (box) box.checked = true;

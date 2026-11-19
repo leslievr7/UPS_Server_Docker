@@ -6,13 +6,15 @@
 {% set test_mode_on = c.get('POWER_SIMULATION_MODE') == 'true' %}
 
 {# A switch row: title, optional help, and the switch itself. #}
-{% macro switch(name, title, help=None, checked=False, id=None) -%}
+{# autosave="SETTING_KEY" saves the switch the moment it's flipped. #}
+{% macro switch(name, title, help=None, checked=False, id=None, autosave=None) -%}
 <label class="field setting-switch" data-orientation="horizontal">
   <section>
     <h3>{{ title }}</h3>
     {% if help %}<p class="muted small">{{ help }}</p>{% endif %}
   </section>
-  <input type="checkbox" role="switch" class="input" name="{{ name }}" value="true" id="{{ id or name }}" {% if checked %}checked{% endif %}>
+  <input type="checkbox" role="switch" class="input" name="{{ name }}" value="true" id="{{ id or name }}"
+         {% if autosave %}data-autosave="{{ autosave }}"{% endif %} {% if checked %}checked{% endif %}>
 </label>
 {%- endmacro %}
 
@@ -108,13 +110,18 @@
               <p>If a machine's UPS script stops checking in for this long, the dashboard flags it.</p>
             </div>
           </section>
-          <section>
-            {{ switch('debug_mode', 'Detailed logging', 'Writes much more to the log. Only useful while troubleshooting.', c.get('DEBUG_MODE') == 'true') }}
-          </section>
         </div>
 
         <div class="form-actions"><button type="submit" class="btn">Save general settings</button></div>
       </form>
+
+      <div class="card">
+        <header><h2>Troubleshooting</h2></header>
+        <section>
+          {{ switch('debug_mode', 'Detailed logging', 'Writes much more to the log. Only useful while troubleshooting. Saves straight away.',
+                    c.get('DEBUG_MODE') == 'true', autosave='DEBUG_MODE') }}
+        </section>
+      </div>
     </div>
   </div>
 
@@ -187,11 +194,14 @@
                 {% if s.get('TYPE') == 'recurring' %}Every {{ (s.get('DAY_OF_WEEK') or '') | capitalize }}{% else %}On {{ s.get('DATE', '') }}{% endif %}
                 at {{ s.get('TIME', '') }}
               </span>
+              {% if s.get('TYPE') == 'one-time' %}{{ ui.badge('One-time', 'info') }}{% endif %}
               {{ ui.badge('Turns test mode ' ~ ('on' if s.get('ACTION') == 'start' else 'off'), 'warning' if s.get('ACTION') == 'start' else 'muted') }}
-              {% if s.get('ENABLED') != 'true' %}{{ ui.badge('Paused', 'muted') }}{% endif %}
+              {% if section in schedules_past and s.get('ENABLED') != 'true' %}<span class="small muted">Already ran</span>{% endif %}
             </div>
           </div>
           <div class="list-actions">
+            <input type="checkbox" role="switch" class="input list-switch" data-schedule-toggle="{{ section }}"
+                   aria-label="{{ s.get('NAME', section) }} active" {% if s.get('ENABLED') == 'true' %}checked{% endif %}>
             <button type="button" class="btn" data-variant="ghost" data-size="icon" data-schedule-edit="{{ section }}"
                     aria-label="Edit {{ s.get('NAME', section) }}">{{ ui.icon('pencil') }}</button>
             <button type="button" class="btn" data-variant="ghost" data-size="icon"
@@ -211,20 +221,22 @@
 
   {# ============================================================ NOTIFICATIONS #}
   <div role="tabpanel" id="panel-notifications" aria-labelledby="tab-notifications" tabindex="-1" hidden>
-    <form method="post" action="{{ url_for('save_notifications') }}" class="stack stack-lg">
-      {{ csrf() }}
+    <div class="stack stack-lg">
       <div class="card">
-        <header><h2>Email me when</h2></header>
+        <header><h2>Email me when</h2><p>Changes save straight away.</p></header>
         <section class="switch-list">
-          {{ switch('notify_power_fail', 'A power cut is detected', checked=c.get('NOTIFY_POWER_FAIL') == 'true') }}
-          {{ switch('notify_power_restored', 'The power comes back', checked=c.get('NOTIFY_POWER_RESTORED') == 'true') }}
-          {{ switch('notify_client_shutdown', 'A machine starts turning off', checked=c.get('NOTIFY_CLIENT_SHUTDOWN') == 'true') }}
-          {{ switch('notify_wol_failure', "A machine doesn't wake up", checked=c.get('NOTIFY_WOL_FAILURE', 'true') == 'true') }}
-          {{ switch('notify_client_stale', "A machine's UPS script stops checking in", checked=c.get('NOTIFY_CLIENT_STALE') == 'true') }}
-          {{ switch('notify_simulation_mode', 'Test mode is turned on or off', checked=c.get('NOTIFY_SIMULATION_MODE') == 'true') }}
-          {{ switch('notify_app_error', 'The server hits an error', checked=c.get('NOTIFY_APP_ERROR') == 'true') }}
+          {{ switch('notify_power_fail', 'A power cut is detected', checked=c.get('NOTIFY_POWER_FAIL') == 'true', autosave='NOTIFY_POWER_FAIL') }}
+          {{ switch('notify_power_restored', 'The power comes back', checked=c.get('NOTIFY_POWER_RESTORED') == 'true', autosave='NOTIFY_POWER_RESTORED') }}
+          {{ switch('notify_client_shutdown', 'A machine starts turning off', checked=c.get('NOTIFY_CLIENT_SHUTDOWN') == 'true', autosave='NOTIFY_CLIENT_SHUTDOWN') }}
+          {{ switch('notify_wol_failure', "A machine doesn't wake up", checked=c.get('NOTIFY_WOL_FAILURE', 'true') == 'true', autosave='NOTIFY_WOL_FAILURE') }}
+          {{ switch('notify_client_stale', "A machine's UPS script stops checking in", checked=c.get('NOTIFY_CLIENT_STALE') == 'true', autosave='NOTIFY_CLIENT_STALE') }}
+          {{ switch('notify_simulation_mode', 'Test mode is turned on or off', checked=c.get('NOTIFY_SIMULATION_MODE') == 'true', autosave='NOTIFY_SIMULATION_MODE') }}
+          {{ switch('notify_app_error', 'The server hits an error', checked=c.get('NOTIFY_APP_ERROR') == 'true', autosave='NOTIFY_APP_ERROR') }}
         </section>
       </div>
+
+    <form method="post" action="{{ url_for('save_notifications') }}" class="stack stack-lg">
+      {{ csrf() }}
 
       <div class="card">
         <header><h2>Email account</h2><p>The mail server the alerts are sent through.</p></header>
@@ -276,12 +288,13 @@
       </div>
 
       <div class="form-actions">
-        <button type="submit" class="btn">Save notification settings</button>
+        <button type="submit" class="btn">Save email settings</button>
         <button type="submit" class="btn" data-variant="outline" form="test-email-form"
                 title="Uses the saved settings, so save first">{{ ui.icon('send') }} Send a test email</button>
       </div>
     </form>
     <form method="post" action="{{ url_for('test_smtp') }}" id="test-email-form">{{ csrf() }}</form>
+    </div>
   </div>
 
   {# ============================================================ BATTERY #}
@@ -585,13 +598,14 @@
           <div class="field" data-type="one-time" hidden>
             <label for="schedule-date">Date</label>
             <input class="input" type="date" id="schedule-date" name="date">
+            <p id="schedule-date-hint" role="alert" hidden>This one has already run. Pick a new date and time.</p>
           </div>
           <div class="field">
             <label for="schedule-time">Time</label>
             <input class="input" type="time" id="schedule-time" name="time" required>
           </div>
         </div>
-        {{ switch('enabled', 'Active', 'Turn off to keep the schedule but skip it for now.', checked=True, id='schedule-enabled') }}
+        <input type="hidden" name="enable" id="schedule-enable" value="">
       </form>
     </section>
     <footer>
@@ -714,7 +728,7 @@
   }
   typeSelect.addEventListener('change', syncType);
 
-  function openSchedule(section) {
+  function openSchedule(section, reenable) {
     var s = section ? schedules[section] || {} : {};
     scheduleForm.reset();
     scheduleForm.action = section ? '/edit_schedule/' + encodeURIComponent(section) : scheduleForm.dataset.add;
@@ -724,12 +738,63 @@
     document.getElementById('schedule-day').value = s.DAY_OF_WEEK || 'sunday';
     document.getElementById('schedule-date').value = s.DATE || '';
     document.getElementById('schedule-time').value = s.TIME || '03:00';
-    document.getElementById('schedule-enabled').checked = section ? s.ENABLED === 'true' : true;
-    document.getElementById('schedule-dialog-title').textContent = section ? 'Edit schedule' : 'Add a schedule';
-    document.getElementById('schedule-submit').textContent = section ? 'Save changes' : 'Add schedule';
+    // Turning a one-time schedule back on after it ran: ask for a new date.
+    var dateField = document.getElementById('schedule-date').closest('.field');
+    document.getElementById('schedule-enable').value = reenable ? '1' : '';
+    document.getElementById('schedule-date-hint').hidden = !reenable;
+    if (reenable) dateField.dataset.invalid = 'true'; else delete dateField.dataset.invalid;
+    document.getElementById('schedule-dialog-title').textContent =
+      reenable ? 'Run ' + (s.NAME || 'this schedule') + ' again' : (section ? 'Edit schedule' : 'Add a schedule');
+    document.getElementById('schedule-submit').textContent =
+      reenable ? 'Save and turn on' : (section ? 'Save changes' : 'Add schedule');
     syncType();
     scheduleDialog.showModal();
+    if (reenable) document.getElementById('schedule-date').focus();
   }
+
+  /* ---- switches that save the moment they're flipped ---- */
+  var csrfToken = document.querySelector('meta[name="csrf-token"]').content;
+  function post(url, data) {
+    return fetch(url, {
+      method: 'POST', body: new URLSearchParams(data),
+      headers: { 'X-CSRF-Token': csrfToken, 'X-Requested-With': 'fetch' }
+    }).then(function (r) {
+      if (r.status === 401) { location.reload(); throw new Error('signed out'); }
+      return r.json();
+    });
+  }
+  function flip(input, url, data, onReply) {
+    var wanted = input.checked;
+    input.disabled = true;
+    post(url, data).then(function (reply) {
+      if (onReply && onReply(reply)) return;
+      if (reply.success) {
+        window.uiToast('success', reply.message);
+      } else {
+        input.checked = !wanted;
+        window.uiToast('error', reply.message || "That didn't save. Please try again.");
+      }
+    }).catch(function (e) {
+      if (e.message === 'signed out') return;
+      input.checked = !wanted;
+      window.uiToast('error', "That didn't save.", "The server didn't answer. Check it's running and try again.");
+    }).finally(function () { input.disabled = false; });
+  }
+  document.addEventListener('change', function (e) {
+    var input = e.target;
+    if (input.dataset.autosave) {
+      flip(input, '{{ url_for("save_switch") }}', { name: input.dataset.autosave, state: input.checked ? 'on' : 'off' });
+    } else if (input.dataset.scheduleToggle) {
+      var section = input.dataset.scheduleToggle;
+      flip(input, '/schedule/' + encodeURIComponent(section) + '/enabled', { state: input.checked ? 'on' : 'off' },
+        function (reply) {
+          if (!reply.needs_date) return false;
+          input.checked = false;  // stays off until a new date is saved
+          openSchedule(section, true);
+          return true;
+        });
+    }
+  });
 
   /* ---- delete confirmation ---- */
   var deleteDialog = document.getElementById('delete-dialog');

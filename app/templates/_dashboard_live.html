@@ -61,7 +61,12 @@
   {% set b = view.banner %}
   {% if b.action == 'test_mode' %}
     {% call ui.status_banner(b.title, b.text, b.tone, b.icon) %}
-      <a class="btn" data-variant="outline" data-size="sm" href="{{ url_for('config') }}">Open settings</a>
+      <form method="post" action="{{ url_for('save_test_mode') }}">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token() }}">
+        <input type="hidden" name="state" value="off">
+        <input type="hidden" name="next" value="dashboard">
+        <button type="submit" class="btn" data-variant="outline" data-size="sm">{{ ui.icon('power-off') }} Stop test mode</button>
+      </form>
     {% endcall %}
   {% elif b.action == 'find_sentinels' %}
     {% call ui.status_banner(b.title, b.text, b.tone, b.icon) %}
@@ -143,7 +148,18 @@
       {% if view.sentinels %}
       <div class="sentinel-grid">
         {% for s in view.sentinels %}
-          <span class="status mono" data-tone="{{ 'success' if s.up else 'danger' }}">{{ s.ip }}</span>
+        <div class="sentinel-tile" data-up="{{ 'true' if s.up else 'false' }}">
+          <span class="pick-icon">{{ ui.icon(s.icon) }}</span>
+          <span class="sentinel-text">
+            <span class="pick-title{% if not s.title %} mono{% endif %}">{{ s.title or s.ip }}</span>
+            {% if s.title %}<span class="mono sentinel-ip">{{ s.ip }}</span>{% endif %}
+          </span>
+          {% if s.maker or s.mac %}
+          {{ ui.info('tip-sentinel-' ~ loop.index, ((s.maker ~ ' · ') if s.maker else '') ~ ('MAC ' ~ s.mac if s.mac else ''), 'end') }}
+          {% endif %}
+          <span class="sentinel-dot" aria-hidden="true"></span>
+          <span class="sr-only">{{ 'answering' if s.up else 'not answering' }}</span>
+        </div>
         {% endfor %}
       </div>
       {% else %}
