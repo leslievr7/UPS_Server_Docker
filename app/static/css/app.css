@@ -130,17 +130,19 @@ code, kbd, .mono { font-family: var(--font-mono); font-size: 0.8125rem; }
 
 /* A status chip: coloured dot plus label, for tables and dense lists. */
 .status { display: inline-flex; align-items: center; gap: 0.45rem; white-space: nowrap; font-weight: 500; }
+/* Only the dot carries the colour; the label stays readable body text. */
+.status { --dot: var(--muted-foreground); }
 .status::before {
   content: ""; width: 0.5rem; height: 0.5rem; border-radius: 999px;
-  background: currentColor; box-shadow: 0 0 0 3px color-mix(in oklab, currentColor 18%, transparent);
+  background: var(--dot); box-shadow: 0 0 0 3px color-mix(in oklab, var(--dot) 20%, transparent);
 }
-.status[data-tone="success"] { color: var(--success); }
-.status[data-tone="warning"] { color: var(--warning); }
-.status[data-tone="info"] { color: var(--info); }
-.status[data-tone="danger"] { color: var(--destructive); }
+.status[data-tone="success"] { --dot: var(--success); }
+.status[data-tone="warning"] { --dot: var(--warning); }
+.status[data-tone="info"] { --dot: var(--info); }
+.status[data-tone="danger"] { --dot: var(--destructive); }
 .status[data-tone="muted"] { color: var(--muted-foreground); }
 .status[data-pulse]::before { animation: status-pulse 1.6s ease-in-out infinite; }
-@keyframes status-pulse { 50% { box-shadow: 0 0 0 6px color-mix(in oklab, currentColor 0%, transparent); } }
+@keyframes status-pulse { 50% { box-shadow: 0 0 0 6px color-mix(in oklab, var(--dot) 0%, transparent); } }
 @media (prefers-reduced-motion: reduce) { .status[data-pulse]::before { animation: none; } }
 
 /* ---------- status banner: the one-line answer to "is everything OK?" ---------- */
@@ -182,6 +184,10 @@ code, kbd, .mono { font-family: var(--font-mono); font-size: 0.8125rem; }
 .stat-value { font-size: 1.5rem; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 .stat-value small { font-size: 0.875rem; font-weight: 500; color: var(--muted-foreground); }
 .stat-hint { color: var(--muted-foreground); font-size: 0.75rem; }
+@media (max-width: 560px) {
+  .stat { padding: 0.75rem 0.875rem; }
+  .stat-value { font-size: 1.25rem; }
+}
 
 /* ---------- machine card ---------- */
 

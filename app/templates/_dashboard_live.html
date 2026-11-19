@@ -1,0 +1,130 @@
+{#
+  The live part of the dashboard. Rendered inside dashboard.html on first load
+  and re-rendered by /dashboard/live every few seconds for the page to swap in.
+  Expects `view` from dashboard_view.build_dashboard().
+#}
+{% import "_ui.html" as ui %}
+
+{% macro machine_card(m) %}
+<article class="machine" data-section="{{ m.section }}">
+  <div class="machine-head">
+    <span class="machine-icon">{{ ui.icon(m.icon) }}</span>
+    <div class="machine-title">
+      <h3>{{ m.name }}</h3>
+      <span class="mono">{{ m.ip }}</span>
+    </div>
+  </div>
+  <div>
+    <span class="badge" data-variant="{{ m.status.tone }}">{{ ui.icon(m.status.icon, cls='icon-spin' if m.status.icon == 'loader-circle' else '') }}{{ m.status.label }}</span>
+  </div>
+
+  {% if m.countdown %}
+  <div class="stack stack-sm">
+    <div class="spread small">
+      <span class="muted">Shuts down in</span>
+      <span class="strong nums" data-deadline="{{ m.countdown.deadline }}">{{ '%02d:%02d' % (m.countdown.remaining // 60, m.countdown.remaining % 60) }}</span>
+    </div>
+    <div class="meter"><span data-meter data-deadline="{{ m.countdown.deadline }}" data-total="{{ m.countdown.total }}"
+         style="width:{{ (100 * m.countdown.remaining / m.countdown.total) | round(1) if m.countdown.total else 0 }}%"></span></div>
+  </div>
+  {% endif %}
+
+  {% if m.status.note %}<p class="small muted">{{ m.status.note }}</p>{% endif %}
+
+  <dl class="machine-meta">
+    {% if m.kind == 'client' %}
+      <dt>UPS script</dt>
+      <dd>{% if m.agent_seen %}Checked in <span data-since="{{ m.agent_seen }}">{{ m.agent_seen_text }}</span>{% else %}Never checked in{% endif %}</dd>
+      <dt>Shuts down</dt><dd>{{ m.delay_text }}</dd>
+      {% if m.ignores_test_mode %}<dt>Test mode</dt><dd>Ignored</dd>{% endif %}
+    {% endif %}
+    {% if m.verdict %}
+      <dt>Battery rule says</dt><dd>{{ m.verdict.decision }}{% if m.verdict.observe %} <span class="muted">(observing)</span>{% endif %}</dd>
+    {% endif %}
+  </dl>
+  {% if m.verdict %}<p class="xsmall muted">Because: {{ m.verdict.reason }}</p>{% endif %}
+
+  <div class="machine-foot">
+    <span class="muted small">
+      {% if not m.has_mac %}No MAC address{% elif m.auto_wol %}Wakes automatically{% else %}Auto-wake off{% endif %}
+    </span>
+    {% if m.has_mac %}
+    <button type="button" class="btn right" data-variant="outline" data-size="sm"
+            data-wake="{{ m.section }}" data-name="{{ m.name }}"
+            {% if not m.can_wake %}disabled title="{{ "It's already on" if m.reachable else 'Wait until the power is back' }}"{% endif %}>
+      {{ ui.icon('power') }} Wake
+    </button>
+    {% endif %}
+  </div>
+</article>
+{% endmacro %}
+
+<div class="stack stack-lg">
+  {% set b = view.banner %}
+  {% if b.action == 'test_mode' %}
+    {% call ui.status_banner(b.title, b.text, b.tone, b.icon) %}
+      <a class="btn" data-variant="outline" data-size="sm" href="{{ url_for('config') }}">Open settings</a>
+    {% endcall %}
+  {% else %}
+    {{ ui.status_banner(b.title, b.text, b.tone, b.icon) }}
+  {% endif %}
+
+  {% if view.observe_note %}
+  <div class="alert" data-variant="info">{{ ui.icon('info') }}<h2>Battery rules are in observe mode</h2><section>{{ view.observe_note }}</section></div>
+  {% endif %}
+
+  <div class="grid-auto" style="--min:9.5rem">
+    {% for t in view.tiles %}
+    <div class="stat">
+      <span class="stat-label">{{ ui.icon(t.icon) }}{{ t.label }}</span>
+      <span class="stat-value">{{ t.value }}{% if t.suffix %} <small>{{ t.suffix }}</small>{% endif %}</span>
+      {% if t.hint %}<span class="stat-hint">{% if t.since %}Checked <span data-since="{{ t.since }}">{{ view.checked_text }}</span>{% else %}{{ t.hint }}{% endif %}</span>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <section>
+    <div class="section-title">
+      <h2>Protected machines</h2><span class="count">{{ view.clients | length }}</span>
+    </div>
+    {% if view.clients %}
+      <div class="grid-auto" style="--min:17rem">
+        {% for m in view.clients %}{{ machine_card(m) }}{% endfor %}
+      </div>
+    {% else %}
+      {% call ui.empty_state('No protected machines yet', "Add a machine with a shutdown delay in Settings, and run the UPS script on it.", 'server') %}
+        <a class="btn" data-size="sm" href="{{ url_for('config') }}">{{ ui.icon('plus') }} Add a machine</a>
+      {% endcall %}
+    {% endif %}
+  </section>
+
+  {% if view.others %}
+  <section>
+    <div class="section-title">
+      <h2>Other machines</h2><span class="count">{{ view.others | length }}</span>
+    </div>
+    <p class="muted small" style="margin:-0.5rem 0 0.75rem">Woken after a power cut, but they don't run the UPS script.</p>
+    <div class="grid-auto" style="--min:17rem">
+      {% for m in view.others %}{{ machine_card(m) }}{% endfor %}
+    </div>
+  </section>
+  {% endif %}
+
+  <section>
+    <div class="section-title">
+      <h2>Sentinels</h2><span class="count">{{ view.sentinels_online }} of {{ view.sentinels | length }} answering</span>
+    </div>
+    <div class="card"><section class="stack">
+      <p class="muted small">Devices plugged into ordinary wall power, not the UPS. If none of them answer, the server treats it as a power cut.</p>
+      {% if view.sentinels %}
+      <div class="cluster cluster-lg">
+        {% for s in view.sentinels %}
+          <span class="status mono" data-tone="{{ 'success' if s.up else 'danger' }}">{{ s.ip }}</span>
+        {% endfor %}
+      </div>
+      {% else %}
+        <p class="small">No sentinels configured. <a href="{{ url_for('config') }}">Add some in Settings</a>.</p>
+      {% endif %}
+    </section></div>
+  </section>
+</div>

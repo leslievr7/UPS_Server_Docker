@@ -24,6 +24,8 @@ from werkzeug.exceptions import BadRequest
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from api import API_TOKEN, get_ups_name, get_server_ip, read_power_state
 from battery_monitor import BatteryMonitor
+from dashboard_view import build_dashboard
+import reachability
 
 # Import version information
 try:
@@ -53,8 +55,48 @@ POWER_MANAGER_CONFIG = "/etc/nut/power_manager.conf"
 PING_CMD = "/bin/ping"
 WAKEONLAN_CMD = "/usr/bin/wakeonlan"
 CLIENT_STATUS_FILE = "/var/run/nut/client_status.json"
+MANAGER_STATE_FILE = "/var/run/nut/power_manager.state"
 
 # --- Helper Functions ---
+
+def read_manager_state():
+    """The power manager's current episode (STATE, TIMESTAMP, ...), or {}."""
+    state = {}
+    try:
+        with open(MANAGER_STATE_FILE, 'r') as f:
+            for line in f:
+                if '=' in line:
+                    key, value = line.strip().split('=', 1)
+                    state[key] = value
+    except (IOError, OSError):
+        pass
+    return state
+
+
+def collect_dashboard():
+    """Gather the state files and turn them into the dashboard view."""
+    pm_config, wake_hosts, schedules = read_power_manager_config()
+    power_state = read_power_state()
+    recorded_sentinels, recorded_hosts = get_reachability()
+
+    sentinel_ips = [ip.strip('"\'') for ip in pm_config.get('SENTINEL_HOSTS', '').split()]
+    host_ips = [p.get('IP') for p in wake_hosts.values() if p.get('IP')]
+    sentinels = dict(recorded_sentinels or {})
+    hosts = dict(recorded_hosts or {})
+    # Only addresses the power manager has not checked are pinged here, all at
+    # once, so even a cold start costs about one ping timeout.
+    missing = [ip for ip in sentinel_ips if ip and ip not in sentinels and validate_ip(ip)]
+    missing += [ip for ip in host_ips if ip not in hosts]
+    if missing:
+        live = reachability.check(missing, ping_cmd=PING_CMD)
+        for ip, up in live.items():
+            if ip in sentinel_ips:
+                sentinels[ip] = up
+            if ip in host_ips:
+                hosts[ip] = up
+
+    return build_dashboard(pm_config, wake_hosts, schedules, power_state,
+                           get_client_statuses(), read_manager_state(), sentinels, hosts)
 
 def get_battery_section():
     """Battery data from the power manager snapshot, shaped for the dashboard.
@@ -353,69 +395,23 @@ def get_ups_clients_from_wake_hosts(wake_hosts):
 def index():
     """Main dashboard"""
     try:
-        # Read configurations
-        pm_config, wake_hosts, _ = read_power_manager_config()
-        
-        # Get UPS clients from wake hosts
-        ups_clients = get_ups_clients_from_wake_hosts(wake_hosts)
-        
-        # Calculate non-UPS hosts (hosts without SHUTDOWN_DELAY_MINUTES)
-        non_ups_hosts = {
-            section: host
-            for section, host in wake_hosts.items()
-            if 'SHUTDOWN_DELAY_MINUTES' not in host
-        }
-        
-        # Get status information. Ping results come from the power manager's
-        # last pass; only addresses it has not checked are pinged here.
-        recorded_sentinels, recorded_hosts = get_reachability()
-        sentinel_hosts_raw = pm_config.get('SENTINEL_HOSTS', '').split()
-        sentinel_hosts = []
-        sentinel_status = {}
-
-        # Clean up sentinel hosts (remove quotes and empty entries)
-        for host in sentinel_hosts_raw:
-            if host:
-                # Remove quotes from host IP
-                clean_host = host.strip().strip('"').strip("'")
-                if clean_host and validate_ip(clean_host):
-                    sentinel_hosts.append(clean_host)
-                    sentinel_status[clean_host] = is_reachable(clean_host, recorded_sentinels)
-                elif clean_host:
-                    # Invalid IP but not empty - still add for display but mark as offline
-                    sentinel_hosts.append(clean_host)
-                    sentinel_status[clean_host] = False
-
-        # Get wake host status
-        wake_host_status = {}
-        for section, params in wake_hosts.items():
-            ip = params.get('IP', '')
-            if ip:
-                wake_host_status[section] = is_reachable(ip, recorded_hosts)
-        
-        # Get client statuses
-        client_statuses = get_client_statuses()
-
-        # Get battery data (empty dict when the integration is off)
-        battery = get_battery_section()
-
-        # Get version information
-        version_info = get_version_info()
-
-        return render_template('dashboard.html',
-                             battery=battery,
-                             pm_config=pm_config,
-                             wake_hosts=wake_hosts,
-                             ups_clients=ups_clients,
-                             non_ups_hosts=non_ups_hosts,
-                             sentinel_hosts=sentinel_hosts,
-                             sentinel_status=sentinel_status,
-                             wake_host_status=wake_host_status,
-                             client_statuses=client_statuses,
-                             version_info=version_info) 
+        view = collect_dashboard()
     except Exception as e:
-        flash(f'Error loading configuration: {str(e)}', 'error')
-        return render_template('dashboard.html', version_info=get_version_info())
+        app.logger.error(f"Error building dashboard: {e}", exc_info=True)
+        flash(f'Error loading the dashboard: {str(e)}', 'error')
+        view = None
+    return render_template('dashboard.html', view=view)
+
+
+@app.route('/dashboard/live')
+def dashboard_live():
+    """The live part of the dashboard, re-rendered for the page to swap in."""
+    try:
+        view = collect_dashboard()
+    except Exception as e:
+        app.logger.error(f"Error building dashboard: {e}", exc_info=True)
+        return f"Error: {e}", 500
+    return render_template('_dashboard_live.html', view=view)
 
 @app.route('/config')
 def config():
