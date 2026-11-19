@@ -1,4 +1,5 @@
 # UPS Power Management Server (Docker Edition)
+_Forked from [MarekWo's original version](https://github.com/MarekWo/UPS_Server_Docker). Readme below used as-is._
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
