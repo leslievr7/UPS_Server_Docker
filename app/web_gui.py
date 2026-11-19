@@ -16,7 +16,7 @@ import smtplib
 import re
 from email.mime.text import MIMEText
 from email.utils import formataddr
-from flask import Flask, render_template, request, redirect, url_for, flash, jsonify
+from flask import Flask, render_template, request, redirect, url_for, flash, jsonify, make_response
 from werkzeug.exceptions import BadRequest
 
 
@@ -411,7 +411,12 @@ def dashboard_live():
     except Exception as e:
         app.logger.error(f"Error building dashboard: {e}", exc_info=True)
         return f"Error: {e}", 500
-    return render_template('_dashboard_live.html', view=view)
+    response = make_response(render_template('_dashboard_live.html', view=view))
+    # The check time travels in headers so the HTML only changes when something
+    # visible changes, and the page can skip redrawing (which would reset focus).
+    response.headers['X-Checked-At'] = view.get('checked_local') or ''
+    response.headers['X-Watch-Stale'] = '1' if view.get('watch_stale') else '0'
+    return response
 
 @app.route('/config')
 def config():

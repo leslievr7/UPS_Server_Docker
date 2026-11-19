@@ -51,3 +51,11 @@
   {% if caller is defined %}<div class="cluster">{{ caller() }}</div>{% endif %}
 </div>
 {%- endmacro %}
+
+{# A small (i) button that explains a concept once, on hover, focus or tap. #}
+{% macro info(id, text, align="start") -%}
+<span class="info-tip" data-align="{{ align }}">
+  <button type="button" aria-label="What does this mean?" aria-describedby="{{ id }}" aria-expanded="false">{{ icon('info') }}</button>
+  <span role="tooltip" id="{{ id }}">{{ text }}</span>
+</span>
+{%- endmacro %}

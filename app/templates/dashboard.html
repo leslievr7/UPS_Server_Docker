@@ -3,10 +3,12 @@
 
 {% block content %}
 <div class="page-header">
-  <div>
-    <h1>Dashboard</h1>
-    <p id="live-status">Updates every few seconds.</p>
-  </div>
+  <h1>Dashboard</h1>
+  <span class="live-chip" id="live-chip" data-side="bottom" data-align="end"
+        data-tooltip="Refreshes every 5 seconds{% if view and view.checked_local %} · last check {{ view.checked_local }}{% endif %}">
+    <span class="status" id="live-label"
+          {% if view and view.watch_stale %}data-tone="warning">Paused{% else %}data-tone="success" data-pulse>Live{% endif %}</span>
+  </span>
 </div>
 
 <div id="live">
@@ -38,27 +40,25 @@
 (function () {
   'use strict';
   var live = document.getElementById('live');
-  var statusLine = document.getElementById('live-status');
+  var chip = document.getElementById('live-chip');
+  var chipLabel = document.getElementById('live-label');
+  var lastHtml = null;
+  var openTip = null;   /* id of the info tooltip the user tapped open, kept across redraws */
   var dialog = document.getElementById('wake-dialog');
   var pending = false;
   var failures = 0;
   var wakeSection = null;
 
-  function ago(seconds) {
-    seconds = Math.max(0, Math.floor(seconds));
-    if (seconds < 5) return 'just now';
-    if (seconds < 60) return seconds + ' s ago';
-    if (seconds < 3600) return Math.floor(seconds / 60) + ' min ago';
-    return Math.floor(seconds / 3600) + ' h ago';
+  function setChip(tone, label, tip) {
+    chipLabel.dataset.tone = tone;
+    chipLabel.textContent = label;
+    if (tone === 'success') chipLabel.setAttribute('data-pulse', ''); else chipLabel.removeAttribute('data-pulse');
+    chip.dataset.tooltip = tip;
   }
 
-  /* Countdowns and "x s ago" labels move every second between refreshes. */
+  /* Only countdowns move between refreshes. */
   function tick() {
     var now = Date.now();
-    live.querySelectorAll('[data-since]').forEach(function (el) {
-      var t = Date.parse(el.dataset.since);
-      if (!isNaN(t)) el.textContent = ago((now - t) / 1000);
-    });
     live.querySelectorAll('[data-deadline]').forEach(function (el) {
       var left = Math.max(0, Math.round((Date.parse(el.dataset.deadline) - now) / 1000));
       if (el.hasAttribute('data-meter')) {
@@ -74,16 +74,34 @@
     if (pending) return;
     pending = true;
     fetch('/dashboard/live', { headers: { 'X-Requested-With': 'fetch' }, cache: 'no-store' })
-      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
+      .then(function (r) {
+        if (!r.ok) throw new Error('HTTP ' + r.status);
+        var checked = r.headers.get('X-Checked-At');
+        if (r.headers.get('X-Watch-Stale') === '1') {
+          setChip('warning', 'Paused', 'The power watchman has stopped checking' + (checked ? ' · last check ' + checked : ''));
+        } else {
+          setChip('success', 'Live', 'Refreshes every 5 seconds' + (checked ? ' · last check ' + checked : ''));
+        }
+        return r.text();
+      })
       .then(function (html) {
-        live.innerHTML = html;
         failures = 0;
-        statusLine.textContent = 'Updates every few seconds.';
+        /* Redraw only when something changed, so focus and open tooltips survive. */
+        if (html === lastHtml) return;
+        lastHtml = html;
+        live.innerHTML = html;
+        if (openTip) {
+          var tip = document.getElementById(openTip);
+          if (tip) {
+            tip.parentElement.setAttribute('data-open', '');
+            tip.previousElementSibling.setAttribute('aria-expanded', 'true');
+          }
+        }
         tick();
       })
       .catch(function () {
         failures += 1;
-        if (failures >= 2) statusLine.textContent = "Can't reach the server — showing the last known state.";
+        if (failures >= 2) setChip('danger', 'Offline', "Can't reach the server — showing the last known state");
       })
       .finally(function () { pending = false; });
   }
@@ -92,6 +110,28 @@
     var t = document.getElementById('toaster');
     if (t && t.toast) t.toast({ category: category, title: title, description: description });
   }
+
+  /* Info tooltips: hover or focus shows them through CSS; a tap pins one open. */
+  function closeTips() {
+    live.querySelectorAll('.info-tip[data-open]').forEach(function (t) {
+      t.removeAttribute('data-open');
+      t.querySelector('button').setAttribute('aria-expanded', 'false');
+    });
+    openTip = null;
+  }
+  document.addEventListener('click', function (event) {
+    var t = event.target.closest('.info-tip');
+    var wasOpen = t && t.hasAttribute('data-open');
+    closeTips();
+    if (t && !wasOpen) {
+      t.setAttribute('data-open', '');
+      t.querySelector('button').setAttribute('aria-expanded', 'true');
+      openTip = t.querySelector('[role="tooltip"]').id;
+    }
+  });
+  document.addEventListener('keydown', function (event) {
+    if (event.key === 'Escape') { closeTips(); if (document.activeElement) document.activeElement.blur(); }
+  });
 
   live.addEventListener('click', function (event) {
     var button = event.target.closest('[data-wake]');

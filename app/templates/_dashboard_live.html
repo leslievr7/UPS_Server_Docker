@@ -13,8 +13,6 @@
       <h3>{{ m.name }}</h3>
       <span class="mono">{{ m.ip }}</span>
     </div>
-  </div>
-  <div>
     <span class="badge" data-variant="{{ m.status.tone }}">{{ ui.icon(m.status.icon, cls='icon-spin' if m.status.icon == 'loader-circle' else '') }}{{ m.status.label }}</span>
   </div>
 
@@ -34,7 +32,7 @@
   <dl class="machine-meta">
     {% if m.kind == 'client' %}
       <dt>UPS script</dt>
-      <dd>{% if m.agent_seen %}Checked in <span data-since="{{ m.agent_seen }}">{{ m.agent_seen_text }}</span>{% else %}Never checked in{% endif %}</dd>
+      <dd>{{ m.agent_text }}</dd>
       <dt>Shuts down</dt><dd>{{ m.delay_text }}</dd>
       {% if m.ignores_test_mode %}<dt>Test mode</dt><dd>Ignored</dd>{% endif %}
     {% endif %}
@@ -78,7 +76,7 @@
     <div class="stat">
       <span class="stat-label">{{ ui.icon(t.icon) }}{{ t.label }}</span>
       <span class="stat-value">{{ t.value }}{% if t.suffix %} <small>{{ t.suffix }}</small>{% endif %}</span>
-      {% if t.hint %}<span class="stat-hint">{% if t.since %}Checked <span data-since="{{ t.since }}">{{ view.checked_text }}</span>{% else %}{{ t.hint }}{% endif %}</span>{% endif %}
+      {% if t.hint %}<span class="stat-hint">{{ t.hint }}</span>{% endif %}
     </div>
     {% endfor %}
   </div>
@@ -86,6 +84,7 @@
   <section>
     <div class="section-title">
       <h2>Protected machines</h2><span class="count">{{ view.clients | length }}</span>
+      {{ ui.info('tip-protected', "They run the UPS script, so they turn themselves off safely in a power cut and are woken again afterwards.") }}
     </div>
     {% if view.clients %}
       <div class="grid-auto" style="--min:17rem">
@@ -102,8 +101,8 @@
   <section>
     <div class="section-title">
       <h2>Other machines</h2><span class="count">{{ view.others | length }}</span>
+      {{ ui.info('tip-others', "Woken after a power cut, but they don't run the UPS script, so they aren't turned off safely first.") }}
     </div>
-    <p class="muted small" style="margin:-0.5rem 0 0.75rem">Woken after a power cut, but they don't run the UPS script.</p>
     <div class="grid-auto" style="--min:17rem">
       {% for m in view.others %}{{ machine_card(m) }}{% endfor %}
     </div>
@@ -113,9 +112,9 @@
   <section>
     <div class="section-title">
       <h2>Sentinels</h2><span class="count">{{ view.sentinels_online }} of {{ view.sentinels | length }} answering</span>
+      {{ ui.info('tip-sentinels', "Devices plugged into ordinary wall power, not the UPS. If none of them answer, the server treats it as a power cut.") }}
     </div>
     <div class="card"><section class="stack">
-      <p class="muted small">Devices plugged into ordinary wall power, not the UPS. If none of them answer, the server treats it as a power cut.</p>
       {% if view.sentinels %}
       <div class="cluster cluster-lg">
         {% for s in view.sentinels %}

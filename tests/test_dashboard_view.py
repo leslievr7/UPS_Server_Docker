@@ -52,7 +52,9 @@ def test_all_good():
     v = view(clients={'192.0.2.10': online(), '192.0.2.11': online()})
     assert v['banner']['tone'] == 'success'
     assert v['banner']['title'] == 'Mains power is on'
-    assert 'All 2 sentinels answered' in v['banner']['text']
+    assert 'All 2 sentinels are answering' in v['banner']['text']
+    assert not v['watch_stale']
+    assert v['clients'][0]['agent_text'] == 'Reporting'
     assert [m['status']['label'] for m in v['clients']] == ['Online', 'Online']
     assert v['others'][0]['status']['label'] == 'Online'
 
@@ -68,6 +70,7 @@ def test_machine_without_agent_needs_attention():
 def test_stale_agent():
     v = view(clients={'192.0.2.10': online(), '192.0.2.11': online(seconds_ago=600)})
     assert v['clients'][1]['status']['label'] == 'Status stale'
+    assert v['clients'][1]['agent_text'] == 'Last heard 10 min ago'
 
 
 def test_power_cut_with_countdown():
@@ -127,3 +130,13 @@ def test_switched_off_media_pc_is_not_a_problem():
     assert media['status']['label'] == 'Offline'
     assert not media['needs_attention']
     assert v['banner']['tone'] == 'success'
+
+
+def test_quiet_watchman_is_flagged():
+    v = view(power_state=state(checked_ago=300))
+    assert v['watch_stale']
+
+
+def test_agent_never_reported():
+    v = view(clients={'192.0.2.10': online()})
+    assert v['clients'][1]['agent_text'] == 'Never reported'

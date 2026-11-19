@@ -189,8 +189,13 @@ def build_machines(wake_hosts, client_statuses, reach_hosts, power_state, stale_
             }
 
         agent_seen = None
+        agent_text = 'Never reported'
         if kind == 'client' and record and record.get('status') in AGENT_STATUSES:
             agent_seen = iso(stamp)
+            seen_age = (now - stamp).total_seconds()
+            # Only say when it last reported if that is worth worrying about;
+            # a ticking "x s ago" on every card is noise.
+            agent_text = 'Reporting' if seen_age <= stale_seconds else f'Last heard {ago(seen_age)}'
 
         delay = as_int(params.get('SHUTDOWN_DELAY_MINUTES'), None) if kind == 'client' else None
         # Battery rules only matter for machines set to use them; for the rest
@@ -216,7 +221,7 @@ def build_machines(wake_hosts, client_statuses, reach_hosts, power_state, stale_
             'status': status,
             'countdown': countdown,
             'agent_seen': agent_seen,
-            'agent_seen_text': ago((now - stamp).total_seconds()) if agent_seen else None,
+            'agent_text': agent_text,
             'delay_text': None if delay is None else ('Immediately' if delay == 0 else f'After {delay} min'),
             'auto_wol': auto_wol,
             'ignores_test_mode': is_true(params.get('IGNORE_SIMULATION')),
@@ -303,9 +308,9 @@ def build_banner(power_state, simulation, manager_state, machines, sentinels_onl
                 'text': text}
 
     if sentinels_online == sentinels_total:
-        text = f"All {sentinels_total} sentinels answered {checked_text}."
+        text = f"All {sentinels_total} sentinels are answering."
     else:
-        text = f"{sentinels_online} of {sentinels_total} sentinels answered {checked_text}."
+        text = f"{sentinels_online} of {sentinels_total} sentinels are answering."
     if attention:
         text += f" {plural(len(attention), 'machine')} {'needs' if len(attention) == 1 else 'need'} attention."
     else:
@@ -352,7 +357,8 @@ def build_tiles(power_state, machines, sentinels_online, sentinels_total, wol_de
         {'label': 'Sentinels answering', 'icon': 'radio-tower',
          'value': str(sentinels_online) if power_state else '—',
          'suffix': f'of {sentinels_total}' if power_state else None,
-         'hint': f'Checked {checked_text}', 'since': checked_at},
+         'hint': ('All answering' if sentinels_online == sentinels_total
+                  else f'{sentinels_total - sentinels_online} not answering') if power_state else None},
         {'label': 'Machines protected', 'icon': 'server', 'value': str(len(clients)),
          'hint': (f"{len(attention)} {'needs' if len(attention) == 1 else 'need'} attention"
                   if attention else 'All reporting normally')},
@@ -447,6 +453,9 @@ def build_dashboard(config, wake_hosts, schedules, power_state, client_statuses,
         'sentinels_online': sentinels_online,
         'checked_at': iso(checked),
         'checked_text': checked_text,
+        'checked_local': checked.astimezone().strftime('%H:%M:%S') if checked else None,
+        # The watchman checks every 15 s; over 90 s of silence means it has stopped.
+        'watch_stale': checked is None or (now - checked).total_seconds() > 90,
         'simulation': simulation,
         'power_cut': power_cut,
         'battery_enabled': battery_enabled,
