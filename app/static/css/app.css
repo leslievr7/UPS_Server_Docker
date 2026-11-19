@@ -384,3 +384,6 @@ details.advanced[open] > summary { margin-bottom: 0.75rem; }
   background: var(--card); color: var(--foreground);
   border-color: color-mix(in oklab, var(--foreground) 12%, transparent);
 }
+
+/* A field's error message is red, like its label and border. */
+.field[data-invalid="true"] > p[role="alert"] { color: var(--destructive); }
