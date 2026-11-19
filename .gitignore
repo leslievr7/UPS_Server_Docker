@@ -39,3 +39,7 @@ docs/reddit-*.md
 dev/.sandbox/
 # Alternative Basecoat style packs for the style sample page (copied from the npm package)
 dev/.styles/
+# The icon sprite is part of the app (the *.svg rule above is for diagrams)
+!app/static/icons/lucide.svg
+# Web login credentials and session secret (created on first run)
+config/web_auth.json
