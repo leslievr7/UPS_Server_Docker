@@ -205,7 +205,7 @@ class World:
                 seen.add(ip)
                 turns_off = 'SHUTDOWN_DELAY_MINUTES' in params
                 machine = self.machines.setdefault(ip, {
-                    'on': True, 'agent': turns_off, 'wakes': True, 'old_script': False,
+                    'on': True, 'agent': turns_off, 'wakes': True, 'old_script': False, 'wol': 'on',
                     'boot_at': None, 'off_at': None, 'flag_since': None,
                     'next_config_at': 0, 'config': None, 'keep_logged': False,
                 })
@@ -366,6 +366,8 @@ def agent_pass(ip, m):
                    'shutdown_delay': delay_min}
         if not m['old_script']:
             payload['client_version'] = '4.5.0'
+            if m.get('wol'):
+                payload['wol'] = m['wol']
         api_call('POST', '/status', payload)
 
     if current == 'OB LB':
@@ -535,7 +537,7 @@ def register_dev_routes(web_app, power_manager):
         ip = request.form.get('ip')
         if name in actions:
             actions[name]()
-        elif ip and ip in WORLD.machines and name in ('power', 'agent', 'wakes', 'script'):
+        elif ip and ip in WORLD.machines and name in ('power', 'agent', 'wakes', 'script', 'wol'):
             with WORLD.lock:
                 m = WORLD.machines[ip]
                 if name == 'power':
@@ -545,6 +547,10 @@ def register_dev_routes(web_app, power_manager):
                 elif name == 'agent':
                     m['agent'] = not m['agent']
                     WORLD.log(f"{m['name']}: agent {'installed' if m['agent'] else 'removed'}")
+                elif name == 'wol':
+                    order = ['on', 'off', 'unsupported', None]
+                    m['wol'] = order[(order.index(m.get('wol')) + 1) % len(order)]
+                    WORLD.log(f"{m['name']}: agent reports WoL as {m['wol'] or 'unknown'}")
                 elif name == 'script':
                     m['old_script'] = not m['old_script']
                     m['next_config_at'] = 0
@@ -601,8 +607,8 @@ async function refresh(){const s=await (await fetch('/dev/state')).json();
  document.getElementById('summary').innerHTML=`Grid: ${pill(s.grid_on,'on','OFF')} &nbsp; Test mode: ${pill(!s.test_mode,'off','ON')} &nbsp; Power manager: <b>${s.manager_state}</b> &nbsp; UPS says: <b>${s.ups_status}</b>`;
  const b=s.battery;document.getElementById('battery').innerHTML=s.battery_enabled?`SoC <b>${b.soc.toFixed(1)}%</b> &middot; ${b.voltage.toFixed(2)} V &middot; ${b.current.toFixed(1)} A`:'Battery monitor is disabled in the sandbox settings.';
  document.getElementById('machines').innerHTML=Object.entries(s.machines).map(([ip,m])=>`<tr><td>${m.name}${m.ups_client?'':' <span class=pill>WoL only</span>'}</td><td>${ip}</td>
- <td>${pill(m.on,'on','off',m.boot_at?'booting':m.off_at?'shutting down':'')}</td><td>${pill(m.agent,'running '+(m.old_script?'4.4.0':'4.5.0'),'none')}</td><td>${pill(m.wakes,'works','ignored')}</td>
- <td><button onclick="act('power','${ip}')">Power</button><button onclick="act('agent','${ip}')">Agent</button><button onclick="act('script','${ip}')">Old/new script</button><button onclick="act('wakes','${ip}')">WoL fault</button></td></tr>`).join('');
+ <td>${pill(m.on,'on','off',m.boot_at?'booting':m.off_at?'shutting down':'')}</td><td>${pill(m.agent,'running '+(m.old_script?'4.4.0':'4.5.0'),'none')}</td><td>${pill(m.wakes,'works','ignored')} <span class=pill>reports ${m.wol||'nothing'}</span></td>
+ <td><button onclick="act('power','${ip}')">Power</button><button onclick="act('agent','${ip}')">Agent</button><button onclick="act('script','${ip}')">Old/new script</button><button onclick="act('wakes','${ip}')">WoL fault</button><button onclick="act('wol','${ip}')">WoL report</button></td></tr>`).join('');
  document.getElementById('events').textContent=s.events.join('\\n')||'Nothing yet.';
  document.getElementById('emails').textContent=s.emails.map(e=>`${e.time}  ${e.subject}\\n${e.body}\\n`).join('\\n')||'None yet.';}
 refresh();setInterval(refresh,2000);

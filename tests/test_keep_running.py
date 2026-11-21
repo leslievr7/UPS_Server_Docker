@@ -120,9 +120,9 @@ def test_old_script_only_matters_for_keep_running_machines():
 def test_raspberry_pis_are_recognised():
     prefixes = machine_roles.no_wake_prefixes()
     assert 'DCA632' in prefixes and 'B827EB' in prefixes
-    assert machine_roles.cant_wake('dc:a6:32:00:00:30', prefixes)
-    assert not machine_roles.cant_wake('02:00:00:00:00:10', prefixes)
-    assert not machine_roles.cant_wake('', prefixes)
+    assert machine_roles.no_wake_maker('dc:a6:32:00:00:30', prefixes)
+    assert not machine_roles.no_wake_maker('02:00:00:00:00:10', prefixes)
+    assert not machine_roles.no_wake_maker('', prefixes)
 
 
 # --- the pop-up's answers ---------------------------------------------------------
@@ -180,7 +180,7 @@ def test_settings_page_warns_about_old_scripts_and_pis(env, tmp_path, monkeypatc
     html = signed_in(env).get('/config').get_data(as_text=True)
     assert 'Keeps running' in html
     assert 'Older UPS script · still turns off after 5 min' in html
-    assert "Can&#39;t be woken (Raspberry Pi)" in html
+    assert 'WoL support unsure' in html
     assert 'Turns off immediately' in html
 
 

@@ -1117,7 +1117,7 @@ class PowerManager:
                 "timestamp": timestamp,
                 "remaining_seconds": None,
                 "shutdown_delay": None
-            })
+            }, keep=('client_version', 'wol'))
         except (IOError, json.JSONDecodeError) as e:
             log.error(f"Failed to update client status file: {e}")
 

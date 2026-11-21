@@ -491,34 +491,52 @@ def configured_sentinels(config):
     return [ip.strip('"\'') for ip in raw.split() if ip.strip('"\'')]
 
 
+def locked_ips(state, config, wake_hosts):
+    """Addresses the picker won't let you choose: the UPS Server itself, and
+    machines from Settings > Machines. One that is already a sentinel stays
+    choosable, so it can be unticked without disappearing behind your back."""
+    ips = {h.get('IP') for h in wake_hosts.values() if h.get('IP')}
+    own = (state or {}).get('server_ip')
+    if own:
+        ips.add(own)
+    return ips - set(configured_sentinels(config))
+
+
 def describe(state, config, wake_hosts):
     """Sort a scan into good choices and unsuitable ones, for the picker.
 
     Returns {'good': [...], 'unsuitable': [...]} with display-ready entries.
     Current sentinels always appear in 'good' (ticked), even if silent.
+    Entries with 'locked' can't be chosen (see locked_ips).
     """
     state = state or {}
     current = configured_sentinels(config)
     saved = parse_sentinel_names(config.get('SENTINEL_NAMES'))
     ups_ips = {h.get('IP'): h.get('NAME') or 'A protected machine' for h in wake_hosts.values()
                if h.get('IP')}
+    locked = locked_ips(state, config, wake_hosts)
     own, gateway = state.get('server_ip'), state.get('gateway_ip')
     good, unsuitable = [], []
     devices = dict(state.get('devices', {}))
     for ip in current:
         devices.setdefault(ip, {'ip': ip, 'replied': False, 'name': '', 'mac': '', 'maker': '',
                                 'kind': '', 'missing': True})
+    # The scan skips its own address; list it anyway, so people can see where
+    # the UPS Server is (it can't be chosen).
+    if own:
+        devices.setdefault(own, {'ip': own, 'replied': True, 'name': '', 'mac': '', 'maker': '',
+                                 'kind': 'computer'})
 
     for ip, dev in devices.items():
         kind = guess_kind(dev)
         reason = None
         if ip == own:
-            reason = 'This server'
+            reason = 'UPS Server runs here'
+        elif ip in ups_ips:
+            reason = 'Added as Machine'
+            kind = 'computer'
         elif ip == gateway:
             reason = 'Your router'
-        elif ip in ups_ips:
-            reason = 'On your UPS'
-            kind = 'computer'
         elif is_private_mac(dev.get('mac')) or _PERSONAL.search(dev.get('name') or ''):
             reason = 'Phone or laptop'
             kind = 'personal'
@@ -547,7 +565,7 @@ def describe(state, config, wake_hosts):
 
         entry = {'ip': ip, 'mac': dev.get('mac') or '', 'title': title, 'detail': detail,
                  'maker': maker, 'icon': icon, 'current': ip in current,
-                 'missing': bool(dev.get('missing')), 'reason': reason,
+                 'missing': bool(dev.get('missing')), 'reason': reason, 'locked': ip in locked,
                  'rank': KIND_ORDER.index(kind) if kind in KIND_ORDER else len(KIND_ORDER)}
         (good if reason is None or entry['current'] else unsuitable).append(entry)
 

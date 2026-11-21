@@ -12,8 +12,12 @@ import json
 import os
 
 
-def update(path, ip, record):
-    """Set the entry for `ip` to `record`, keeping every other machine's entry."""
+def update(path, ip, record, keep=()):
+    """Set the entry for `ip` to `record`, keeping every other machine's entry.
+
+    `keep` names fields to carry over from this machine's previous entry when
+    `record` doesn't set them (what its UPS script reported about itself).
+    """
     with open(path + '.lock', 'a') as lock:
         fcntl.flock(lock.fileno(), fcntl.LOCK_EX)
         try:
@@ -21,6 +25,12 @@ def update(path, ip, record):
                 statuses = json.load(f)
         except (IOError, ValueError):
             statuses = {}
+        previous = statuses.get(ip)
+        if keep and isinstance(previous, dict):
+            record = dict(record)
+            for key in keep:
+                if key in previous and key not in record:
+                    record[key] = previous[key]
         statuses[ip] = record
         temp_file = f'{path}.{os.getpid()}.tmp'
         with open(temp_file, 'w') as f:

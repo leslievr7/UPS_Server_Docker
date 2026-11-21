@@ -40,6 +40,18 @@ def quiet_warning(quiet):
             "answers can't tell you about a power cut.")
 
 
+def machine_ips(wake_hosts):
+    """The addresses of the machines in Settings > Machines."""
+    return {h.get('IP') for h in wake_hosts.values() if h.get('IP')}
+
+
+def machine_warning(ips):
+    """For sentinel addresses that are also machines."""
+    if len(ips) == 1:
+        return f"{ips[0]} is added as a Machine."
+    return f"{', '.join(ips[:-1])} and {ips[-1]} are added as Machines."
+
+
 def register(app, gui):
     """Add the onboarding routes to `app`. `gui` is the web_gui module."""
 
@@ -96,8 +108,11 @@ def register(app, gui):
             return redirect(url_for('sentinel_guide', **({'from': origin} if origin == 'settings' else {})))
         web_auth.set_flag(GUIDE_SEEN)
         first_run = needs_welcome()
+        config, wake_hosts, _ = gui.read_power_manager_config()
+        # Machines that aren't sentinels, for addresses added manually.
+        machines = sorted(network_scan.locked_ips(None, config, wake_hosts))
         return render_template('sentinel_picker.html', origin=origin, first_run=first_run,
-                               focus=first_run, back=back_url(origin))
+                               focus=first_run, back=back_url(origin), machine_ips=machines)
 
     @app.route('/sentinels/scan', methods=['POST'])
     def sentinel_scan_start():
@@ -139,6 +154,14 @@ def register(app, gui):
                                     **({'from': origin} if origin == 'settings' else {})))
 
         config, wake_hosts, schedules = gui.read_power_manager_config()
+        # The page doesn't offer these; refuse them if they arrive anyway.
+        locked = network_scan.locked_ips(network_scan.status(), config, wake_hosts)
+        blocked = [ip for ip in chosen if ip in locked]
+        if blocked:
+            flash(f"{', '.join(blocked)} can't be a sentinel: it's the UPS Server or added as a Machine. "
+                  "Nothing was saved.", 'error')
+            return redirect(url_for('sentinel_picker', guide='skip',
+                                    **({'from': origin} if origin == 'settings' else {})))
         quiet = silent_sentinels(gui, config, chosen)
         if quiet is not None and len(quiet) == len(chosen):
             flash(NONE_ANSWER, 'error')

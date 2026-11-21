@@ -134,9 +134,10 @@ def test_scan_sorts_good_choices_from_unsuitable(scan_files):
     groups = network_scan.describe(state, {'SENTINEL_HOSTS': ''},
                                    {'WAKE_HOST_1': {'NAME': 'Proxmox', 'IP': '192.0.2.10'}})
     reasons = {e['ip']: e['reason'] for e in groups['unsuitable']}
-    assert '192.0.2.2' not in reasons  # the server never scans itself
+    # The scan skips the server's own address, but the picker lists it, locked.
+    assert reasons['192.0.2.2'] == 'UPS Server runs here'
     assert reasons['192.0.2.1'] == 'Your router'
-    assert reasons['192.0.2.10'] == 'On your UPS'
+    assert reasons['192.0.2.10'] == 'Added as Machine'
     assert reasons['192.0.2.40'] == 'Phone or laptop'      # private MAC
     assert reasons['192.0.2.42'] == 'Phone or laptop'      # name says laptop
     assert reasons['192.0.2.26'] == "Doesn't answer pings"
@@ -277,7 +278,7 @@ def test_scan_status_is_sorted_for_the_picker(tmp_path, monkeypatch, scan_files)
     data = client.get('/sentinels/scan', headers={'X-Requested-With': 'fetch'}).get_json()
     assert data['status'] == 'done' and data['found'] > 10
     assert any(e['ip'] == '192.0.2.20' for e in data['good'])
-    assert any(e['ip'] == '192.0.2.10' and e['reason'] == 'On your UPS' for e in data['unsuitable'])
+    assert any(e['ip'] == '192.0.2.10' and e['reason'] == 'Added as Machine' for e in data['unsuitable'])
 
 
 def test_saving_sentinels_remembers_their_devices(tmp_path, monkeypatch, scan_files):

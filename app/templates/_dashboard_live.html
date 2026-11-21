@@ -47,7 +47,7 @@
 
   <div class="machine-foot">
     <span class="muted small">
-      {% if not m.has_mac %}No MAC address{% elif not m.auto_wol %}Auto-wake off{% elif m.cant_wake %}Can't be woken (Raspberry Pi){% else %}Wakes automatically{% endif %}
+      {% if not m.has_mac %}No MAC address{% elif not m.auto_wol %}Auto-wake off{% elif m.wol == 'unsupported' %}<span class="wol-note" data-tone="faint">WoL not supported</span>{% elif m.wol == 'unsure' %}<span class="wol-note" data-tone="faint">WoL support unsure</span>{% elif m.wol == 'off' %}<span class="wol-note" data-tone="warning">WoL is off</span>{% else %}Wakes automatically{% endif %}
     </span>
     {% if m.has_mac %}
     <button type="button" class="btn right" data-variant="outline" data-size="sm"
@@ -117,7 +117,7 @@
   <section>
     <div class="section-title">
       <h2>Turn off in a power cut</h2><span class="count">{{ view.clients | length }}</span>
-      {{ ui.info('tip-protected', "Their UPS script turns them off safely in a power cut. They can be woken again afterwards.") }}
+      {{ ui.info('tip-protected', "These machines are safely shut down in a power cut. Once the power is back, the server wakes the ones set to wake up, if they support WoL.") }}
     </div>
     {% if view.clients %}
       <div class="grid-auto" style="--min:17rem">

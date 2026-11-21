@@ -165,8 +165,12 @@
               {% endif %}
               {% if h.get('AUTO_WOL', 'true') == 'false' %}
                 {{ ui.badge("Isn't woken", 'muted') }}
-              {% elif note.cant_wake %}
-                {{ ui.badge("Can't be woken (Raspberry Pi)", 'warning', 'triangle-alert') }}
+              {% elif note.wol == 'unsupported' %}
+                {{ ui.badge('WoL not supported', 'warning', 'triangle-alert') }}
+              {% elif note.wol == 'unsure' %}
+                {{ ui.badge('WoL support unsure', 'warning', 'triangle-alert') }}
+              {% elif note.wol == 'off' %}
+                {{ ui.badge('WoL is off', 'warning', 'triangle-alert') }}
               {% else %}
                 {{ ui.badge('Wakes automatically', 'muted') }}
               {% endif %}
@@ -528,6 +532,9 @@
             <input class="input mono" id="host-mac" name="mac" required placeholder="00:11:32:AA:BB:CC">
           </div>
         </div>
+        <div class="field" id="host-sentinel" hidden>
+          <p class="field-warning">{{ ui.icon('triangle-alert') }}<span>This machine is added as a sentinel.</span></p>
+        </div>
         <div class="field">
           <label for="host-power-cut-trigger">In a power cut</label>
           <div class="inline-choice">
@@ -548,7 +555,7 @@
             {{ ui.select('when_back', [('wake', 'Wake it up'), ('leave', "Don't wake it")], 'wake', id='host-when-back') }}
           </div>
           <p id="host-when-back-help"></p>
-          <p class="field-warning" id="host-no-wake" hidden>{{ ui.icon('triangle-alert') }}<span>Raspberry Pi boards can't be woken over the network. Once it turns itself off, it stays off until its power is unplugged and plugged back in.</span></p>
+          <p class="field-warning" id="host-no-wake" hidden>{{ ui.icon('triangle-alert') }}<span></span></p>
         </div>
         <div data-shutdown-only>
           {{ switch('join_test_mode', 'Turn off during test mode', 'Rehearse with it when test mode is on.', id='host-test') }}
@@ -710,6 +717,21 @@
   };
   var machineNotes = {{ machine_notes | tojson }};
   var noWakePrefixes = {{ no_wake_prefixes | tojson }};
+  var wolReports = {{ wol_reports | tojson }};
+  var sentinelIps = {{ sentinel_ips | tojson }};
+  var wolWarnings = {
+    unsupported: "Its UPS script reports that this machine's network card doesn't support Wake-on-LAN.",
+    unsure: "This MAC address belongs to a Raspberry Pi. Raspberry Pi boards don't usually support Wake-on-LAN.",
+    off: "Its UPS script reports that Wake-on-LAN is turned off on this machine's network card."
+  };
+  /* Same order as machine_roles.wol_state. */
+  function wolState(ip, mac) {
+    var report = wolReports[ip];
+    if (report === 'unsupported') return 'unsupported';
+    if (noWakePrefixes.indexOf(macPrefix(mac)) !== -1) return 'unsure';
+    if (report === 'off') return 'off';
+    return null;
+  }
   var hostSection = null;
   function macPrefix(value) { return (value || '').replace(/[^0-9a-f]/gi, '').slice(0, 6).toUpperCase(); }
   function syncHostChoices() {
@@ -723,8 +745,12 @@
     document.getElementById('host-test').disabled = !off;
     var note = (hostSection && machineNotes[hostSection]) || {};
     document.getElementById('host-old-script').hidden = off || !note.script_too_old;
-    document.getElementById('host-no-wake').hidden =
-      !wake || noWakePrefixes.indexOf(macPrefix(hostMac.value)) === -1;
+    var ip = document.getElementById('host-ip').value.trim();
+    var wol = wolState(ip, hostMac.value);
+    var noWake = document.getElementById('host-no-wake');
+    noWake.hidden = !wake || !wol;
+    noWake.querySelector('span').textContent = wol ? wolWarnings[wol] : '';
+    document.getElementById('host-sentinel').hidden = sentinelIps.indexOf(ip) === -1;
   }
   [powerCut, whenBack].forEach(function (el) { el.addEventListener('change', syncHostChoices); });
   var hostFields = { NAME: 'host-name', IP: 'host-ip', MAC: 'host-mac', BROADCAST_IP: 'host-broadcast',
@@ -756,6 +782,8 @@
     hostDialog.showModal();
     hostDialog.querySelector('section').scrollTop = 0;
   }
+
+  document.getElementById('host-ip').addEventListener('input', syncHostChoices);
 
   /* Tidy MAC addresses as they are typed: 001132aabbcc -> 00:11:32:AA:BB:CC */
   document.getElementById('host-mac').addEventListener('input', function (e) {

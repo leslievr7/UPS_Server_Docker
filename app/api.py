@@ -537,6 +537,10 @@ def update_client_status():
     version = data.get('client_version')
     if isinstance(version, str) and machine_roles.parse_version(version):
         client_status['client_version'] = version.strip()[:20]
+    # ...and whether its network card supports Wake-on-LAN and has it on.
+    wol = data.get('wol')
+    if wol in machine_roles.WOL_REPORTS:
+        client_status['wol'] = wol
 
     # Several API workers (and the power manager) can write at the same moment;
     # client_status takes care of taking turns.

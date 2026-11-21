@@ -357,8 +357,8 @@ def config():
                             if 'SHUTDOWN_DELAY_MINUTES' in h
                             and h.get('IGNORE_SIMULATION', 'false') != 'true']
         no_wake_prefixes = machine_roles.no_wake_prefixes()
-        machine_notes = machine_roles.machine_notes(wake_hosts, get_client_statuses(),
-                                                    no_wake_prefixes)
+        client_statuses = get_client_statuses()
+        machine_notes = machine_roles.machine_notes(wake_hosts, client_statuses, no_wake_prefixes)
 
         return render_template('config.html',
                              pm_config=page_config,
@@ -367,6 +367,8 @@ def config():
                              wake_hosts=wake_hosts,
                              machine_notes=machine_notes,
                              no_wake_prefixes=no_wake_prefixes,
+                             wol_reports=machine_roles.wol_reports(client_statuses),
+                             sentinel_ips=network_scan.configured_sentinels(pm_config),
                              old_script_delay=machine_roles.OLD_SCRIPT_DELAY,
                              ups_clients=ups_clients,
                              schedules=schedules,

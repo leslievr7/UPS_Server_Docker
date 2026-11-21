@@ -103,7 +103,7 @@ def register(app, gui):
         bad = [ip for ip in sentinels if not gui.validate_ip(ip)]
         if bad:
             return back('general', f"{', '.join(bad)} isn't a valid IP address. Nothing was saved.", 'error')
-        current = gui.read_power_manager_config()[0]
+        current, wake_hosts, _ = gui.read_power_manager_config()
         quiet = web_onboarding.silent_sentinels(gui, current, sentinels) if sentinels else None
         if quiet is not None and len(quiet) == len(sentinels):
             return back('general', web_onboarding.NONE_ANSWER, 'error')
@@ -130,6 +130,10 @@ def register(app, gui):
         updates['DEFAULT_BROADCAST_IP'] = broadcast
         if quiet:
             flash(web_onboarding.quiet_warning(quiet), 'warning')
+        machines = web_onboarding.machine_ips(wake_hosts)
+        overlap = [ip for ip in sentinels if ip in machines]
+        if overlap:
+            flash(web_onboarding.machine_warning(overlap), 'warning')
         return save(updates, 'general', 'General settings saved.')
 
     @app.route('/settings/test_mode', methods=['POST'])

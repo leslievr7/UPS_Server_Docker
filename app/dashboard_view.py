@@ -249,7 +249,7 @@ def build_machines(wake_hosts, client_statuses, reach_hosts, power_state, stale_
             'agent_text': agent_text,
             'delay_text': None if delay is None else ('Immediately' if delay == 0 else f'After {delay} min'),
             'auto_wol': auto_wol,
-            'cant_wake': machine_roles.cant_wake(params.get('MAC'), machine_roles.no_wake_prefixes()),
+            'wol': machine_roles.wol_state(params.get('MAC'), record, machine_roles.no_wake_prefixes()),
             'ignores_test_mode': is_true(params.get('IGNORE_SIMULATION')),
             # Waking a machine during a power cut would only drain the UPS.
             'can_wake': bool(params.get('MAC')) and not reachable and not power_cut,

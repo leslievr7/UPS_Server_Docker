@@ -10,9 +10,11 @@ about those machines.
 Since 4.5.0 the script reports its version with every check-in
 (client_version in client_status.json), which is how we tell the two apart.
 
-Raspberry Pi boards can't be woken over the network: once halted they stay off
-until their power is cycled. The makers list (app/data/oui_makers.tsv) tells us
-which MAC addresses belong to one.
+Waking over the network (Wake-on-LAN): since 4.5.0 the script also reports
+whether its network card supports it and has it switched on (wol in
+client_status.json: "on", "off" or "unsupported"). Without that, the makers
+list (app/data/oui_makers.tsv) shows which MAC addresses belong to a Raspberry
+Pi, and Raspberry Pi boards don't usually support Wake-on-LAN.
 """
 
 import os
@@ -25,7 +27,11 @@ OLD_SCRIPT_DELAY = '5'
 # Statuses the UPS script itself reports (wol_* ones are written by the server).
 AGENT_STATUSES = ('online', 'on_battery', 'shutdown_pending', 'shutting_down')
 
+# What the script can report about Wake-on-LAN (UPS_monitor's get_wol_state).
+WOL_REPORTS = ('on', 'off', 'unsupported')
+
 MAKERS_FILE = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'data', 'oui_makers.tsv')
+# Boards that don't usually support Wake-on-LAN.
 NO_WAKE_MAKERS = ('Raspberry Pi',)
 
 
@@ -86,14 +92,40 @@ def mac_prefix(mac):
     return re.sub(r'[^0-9A-Fa-f]', '', str(mac or ''))[:6].upper()
 
 
-def cant_wake(mac, prefixes):
+def no_wake_maker(mac, prefixes):
+    """True if the MAC address belongs to a board that doesn't usually support Wake-on-LAN."""
     return bool(mac) and mac_prefix(mac) in prefixes
+
+
+def wol_state(mac, record, prefixes):
+    """What stands in the way of waking this machine over the network.
+
+    'unsupported': its UPS script reports the network card can't do it.
+    'unsure':      a Raspberry Pi's MAC address, and its script doesn't say otherwise.
+    'off':         its UPS script reports the card supports it, but it's switched off.
+    None:          nothing we know of.
+    """
+    report = (record or {}).get('wol')
+    if report == 'unsupported':
+        return 'unsupported'
+    if no_wake_maker(mac, prefixes):
+        return 'unsure'
+    if report == 'off':
+        return 'off'
+    return None
+
+
+def wol_reports(client_statuses):
+    """{ip: 'on' | 'off' | 'unsupported'} for the machines whose script reported it."""
+    statuses = client_statuses if isinstance(client_statuses, dict) else {}
+    return {ip: r['wol'] for ip, r in statuses.items()
+            if isinstance(r, dict) and r.get('wol') in WOL_REPORTS}
 
 
 def machine_notes(wake_hosts, client_statuses, prefixes):
     """Per machine, what the settings page should warn about.
 
-    {section: {'old_script': bool, 'script_too_old': bool, 'cant_wake': bool,
+    {section: {'old_script': bool, 'script_too_old': bool, 'wol': see wol_state,
                'no_script': bool, 'version': '4.5.0' or None}}
 
     old_script: set to keep running, but its script will still turn it off.
@@ -106,7 +138,7 @@ def machine_notes(wake_hosts, client_statuses, prefixes):
         notes[section] = {
             'old_script': old_script(params, record),
             'script_too_old': has_reported(record) and not understands_keep_running(record),
-            'cant_wake': cant_wake(params.get('MAC'), prefixes),
+            'wol': wol_state(params.get('MAC'), record, prefixes),
             'no_script': turns_off(params) and not has_reported(record),
             'version': (record or {}).get('client_version') if has_reported(record) else None,
         }
