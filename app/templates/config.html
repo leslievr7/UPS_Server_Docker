@@ -123,14 +123,10 @@
           {% set keep = c.get('LOG_RETENTION_DAYS', '7') if c.get('LOG_RETENTION_DAYS') in ('3', '7', '14', '30') else '7' %}
           <div class="field setting-switch" data-orientation="horizontal">
             <section>
-              <h3><label for="log_retention_days">Keep logs for</label></h3>
+              <h3><label for="log_retention_days-trigger">Keep logs for</label></h3>
               <p class="muted small">Older logs are deleted overnight. Longer uses more space on the server's storage. Saves straight away.</p>
             </section>
-            <select class="select setting-select" id="log_retention_days" data-autosave-choice="LOG_RETENTION_DAYS" data-saved="{{ keep }}">
-              {% for d in ('3', '7', '14', '30') %}
-              <option value="{{ d }}" {% if d == keep %}selected{% endif %}>{{ d }} days</option>
-              {% endfor %}
-            </select>
+            {{ ui.select('', [('3', '3 days'), ('7', '7 days'), ('14', '14 days'), ('30', '30 days')], keep, id='log_retention_days', cls='setting-select', attrs='data-autosave-choice="LOG_RETENTION_DAYS" data-saved="' ~ keep ~ '"') }}
           </div>
         </section>
       </div>
@@ -141,30 +137,39 @@
   <div role="tabpanel" id="panel-machines" aria-labelledby="tab-machines" tabindex="-1" hidden>
     <div class="stack">
       <div class="spread">
-        <p class="muted">Protected machines run the UPS script and turn themselves off in a power cut. Every machine with a MAC address can be woken afterwards.</p>
+        <p class="muted">Choose what each machine does in a power cut and when the power comes back. Machines that turn themselves off need the UPS script installed.</p>
         <button type="button" class="btn" data-host-add>{{ ui.icon('plus') }} Add a machine</button>
       </div>
 
       {% if wake_hosts %}
       <div class="card list-card">
         {% for section, h in wake_hosts | dictsort %}
-        {% set protected = h.get('SHUTDOWN_DELAY_MINUTES') not in (None, '') %}
+        {% set turns_off = h.get('SHUTDOWN_DELAY_MINUTES') not in (None, '') %}
+        {% set note = machine_notes.get(section, {}) %}
         <div class="list-row">
-          <span class="machine-icon">{{ ui.icon('server' if protected else 'monitor') }}</span>
+          <span class="machine-icon">{{ ui.icon('server' if turns_off else 'monitor') }}</span>
           <div class="list-main">
             <div class="cluster" style="--gap:0.5rem">
               <h3>{{ h.get('NAME', section) }}</h3>
               <span class="mono muted small">{{ h.get('IP', '') }}</span>
             </div>
             <div class="cluster" style="--gap:0.375rem">
-              {% if protected %}
+              {% if turns_off %}
                 {% set d = h.get('SHUTDOWN_DELAY_MINUTES') %}
-                {{ ui.badge('Protected · turns off ' ~ ('immediately' if d == '0' else 'after ' ~ d ~ ' min'), 'info') }}
+                {{ ui.badge('Turns off ' ~ ('immediately' if d == '0' else 'after ' ~ d ~ ' min'), 'info') }}
                 {% if h.get('IGNORE_SIMULATION') == 'true' %}{{ ui.badge('Ignores test mode', 'muted') }}{% endif %}
+                {% if note.no_script %}{{ ui.badge('UPS script not seen yet', 'warning', 'circle-alert') }}{% endif %}
               {% else %}
-                {{ ui.badge('Wake-up only', 'muted') }}
+                {{ ui.badge('Keeps running', 'muted') }}
+                {% if note.old_script %}{{ ui.badge('Older UPS script · still turns off after ' ~ old_script_delay ~ ' min', 'warning', 'triangle-alert') }}{% endif %}
               {% endif %}
-              {{ ui.badge('Wakes automatically' if h.get('AUTO_WOL', 'true') != 'false' else 'Auto-wake off', 'muted') }}
+              {% if h.get('AUTO_WOL', 'true') == 'false' %}
+                {{ ui.badge("Isn't woken", 'muted') }}
+              {% elif note.cant_wake %}
+                {{ ui.badge("Can't be woken (Raspberry Pi)", 'warning', 'triangle-alert') }}
+              {% else %}
+                {{ ui.badge('Wakes automatically', 'muted') }}
+              {% endif %}
               {% if battery_on and h.get('POWER_SOURCE') %}{{ ui.badge('Power source: ' ~ h.get('POWER_SOURCE'), 'muted') }}{% endif %}
             </div>
           </div>
@@ -263,12 +268,8 @@
             <p>Usually 587, or 465 for SSL.</p>
           </div>
           <div class="field">
-            <label for="smtp_use_tls">Encryption (STARTTLS)</label>
-            <select class="select" id="smtp_use_tls" name="smtp_use_tls">
-              <option value="auto" {% if c.get('SMTP_USE_TLS', 'auto') == 'auto' %}selected{% endif %}>Automatic (recommended)</option>
-              <option value="true" {% if c.get('SMTP_USE_TLS') == 'true' %}selected{% endif %}>Always</option>
-              <option value="false" {% if c.get('SMTP_USE_TLS') == 'false' %}selected{% endif %}>Never</option>
-            </select>
+            <label for="smtp_use_tls-trigger">Encryption (STARTTLS)</label>
+            {{ ui.select('smtp_use_tls', [('auto', 'Automatic (recommended)'), ('true', 'Always'), ('false', 'Never')], c.get('SMTP_USE_TLS', 'auto'), id='smtp_use_tls') }}
             <p>Automatic uses it on every port except 26.</p>
           </div>
           <div class="field">
@@ -347,20 +348,13 @@
           <header><h2>Decisions</h2></header>
           <section class="form-grid">
             <div class="field">
-              <label for="battery_decision_mode">Mode</label>
-              <select class="select" id="battery_decision_mode" name="battery_decision_mode">
-                <option value="observe" {% if c.get('BATTERY_DECISION_MODE', 'observe') != 'enforce' %}selected{% endif %}>Observe — show what it would do</option>
-                <option value="enforce" {% if c.get('BATTERY_DECISION_MODE') == 'enforce' %}selected{% endif %}>Enforce — battery rules decide</option>
-              </select>
+              <label for="battery_decision_mode-trigger">Mode</label>
+              {{ ui.select('battery_decision_mode', [('observe', 'Observe — show what it would do'), ('enforce', 'Enforce — battery rules decide')], 'enforce' if c.get('BATTERY_DECISION_MODE') == 'enforce' else 'observe', id='battery_decision_mode') }}
               <p>Start with Observe for a few days. Machines keep following the sentinels while you check the battery rules agree.</p>
             </div>
             <div class="field">
-              <label for="battery_default_power_source">Machines decide by</label>
-              <select class="select" id="battery_default_power_source" name="battery_default_power_source">
-                <option value="sentinel" {% if c.get('BATTERY_DEFAULT_POWER_SOURCE', 'sentinel') == 'sentinel' %}selected{% endif %}>Sentinels only</option>
-                <option value="battery" {% if c.get('BATTERY_DEFAULT_POWER_SOURCE') == 'battery' %}selected{% endif %}>Battery monitor</option>
-                <option value="both" {% if c.get('BATTERY_DEFAULT_POWER_SOURCE') == 'both' %}selected{% endif %}>Both must agree</option>
-              </select>
+              <label for="battery_default_power_source-trigger">Machines decide by</label>
+              {{ ui.select('battery_default_power_source', [('sentinel', 'Sentinels only'), ('battery', 'Battery monitor'), ('both', 'Both must agree')], c.get('BATTERY_DEFAULT_POWER_SOURCE', 'sentinel'), id='battery_default_power_source') }}
               <p>Used by machines that don't choose for themselves.</p>
             </div>
             <div class="field">
@@ -406,12 +400,8 @@
           </section>
           <section class="form-grid">
             <div class="field">
-              <label for="battery_sim_ac_power">Mains</label>
-              <select class="select" id="battery_sim_ac_power" name="battery_sim_ac_power">
-                <option value="" {% if not c.get('BATTERY_SIM_AC_POWER') %}selected{% endif %}>Real reading</option>
-                <option value="true" {% if c.get('BATTERY_SIM_AC_POWER') == 'true' %}selected{% endif %}>Present</option>
-                <option value="false" {% if c.get('BATTERY_SIM_AC_POWER') == 'false' %}selected{% endif %}>Gone</option>
-              </select>
+              <label for="battery_sim_ac_power-trigger">Mains</label>
+              {{ ui.select('battery_sim_ac_power', [('', 'Real reading'), ('true', 'Present'), ('false', 'Gone')], c.get('BATTERY_SIM_AC_POWER', ''), id='battery_sim_ac_power') }}
             </div>
             <div class="field"><label for="battery_sim_soc">Charge (%)</label>
               <input class="input" type="number" step="0.1" min="0" max="100" id="battery_sim_soc" name="battery_sim_soc" value="{{ c.get('BATTERY_SIM_SOC', '') }}"></div>
@@ -504,7 +494,7 @@
       {% else %}
       <p>Every machine will be told the power is out.
         {% if test_mode_acting %}These will <strong>turn themselves off</strong>: {{ test_mode_acting | join(', ') }}.
-        {% else %}All your protected machines ignore test mode, so none will turn off.{% endif %}</p>
+        {% else %}None of your machines are set to turn off in test mode.{% endif %}</p>
       {% endif %}
     </header>
     <footer>
@@ -521,7 +511,7 @@
 <dialog id="host-dialog" class="dialog form-dialog" aria-labelledby="host-dialog-title">
   <div>
     <header><h2 id="host-dialog-title">Add a machine</h2></header>
-    <section>
+    <section class="scrollbar">
       <form method="post" id="host-form" action="{{ url_for('add_wake_host') }}" class="stack" data-add="{{ url_for('add_wake_host') }}">
         {{ csrf() }}
         <div class="field">
@@ -538,16 +528,31 @@
             <input class="input mono" id="host-mac" name="mac" required placeholder="00:11:32:AA:BB:CC">
           </div>
         </div>
-        {{ switch('protected', 'Protected by the UPS', 'It runs the UPS script and turns itself off in a power cut.', id='host-protected') }}
-        <div class="stack" data-protected-only>
-          <div class="field">
-            <label for="host-delay">Turn off after</label>
-            <div class="input-unit"><input class="input" type="number" id="host-delay" name="shutdown_delay" min="0" max="60" value="0"><span>min</span></div>
-            <p>How long it keeps running on the UPS once a power cut starts. 0 turns it off immediately.</p>
+        <div class="field">
+          <label for="host-power-cut-trigger">In a power cut</label>
+          <div class="inline-choice">
+            {{ ui.select('power_cut', [('shutdown', 'Turn itself off'), ('keep', 'Keep running')], 'shutdown', id='host-power-cut') }}
+            <span class="input-unit" data-shutdown-only>
+              <span>after</span>
+              <input class="input" type="number" id="host-delay" name="shutdown_delay" min="0" max="1440" value="0"
+                     aria-label="Minutes before it turns itself off">
+              <span>min</span>
+            </span>
           </div>
-          {{ switch('ignore_simulation', 'Ignore test mode', 'Keep it running during test power cuts.', id='host-ignore') }}
+          <p id="host-power-cut-help"></p>
+          <p class="field-warning" id="host-old-script" hidden>{{ ui.icon('triangle-alert') }}<span>Its UPS script is too old to keep running. Until you update the script on this machine, it will still turn itself off {{ old_script_delay }} minutes into a power cut.</span></p>
         </div>
-        {{ switch('auto_wol', 'Wake automatically', 'Send it a wake-up signal when the power comes back.', checked=True, id='host-auto') }}
+        <div class="field">
+          <label for="host-when-back-trigger">When the power comes back</label>
+          <div class="inline-choice">
+            {{ ui.select('when_back', [('wake', 'Wake it up'), ('leave', "Don't wake it")], 'wake', id='host-when-back') }}
+          </div>
+          <p id="host-when-back-help"></p>
+          <p class="field-warning" id="host-no-wake" hidden>{{ ui.icon('triangle-alert') }}<span>Raspberry Pi boards can't be woken over the network. Once it turns itself off, it stays off until its power is unplugged and plugged back in.</span></p>
+        </div>
+        <div data-shutdown-only>
+          {{ switch('join_test_mode', 'Turn off during test mode', 'Rehearse with it when test mode is on.', id='host-test') }}
+        </div>
         <details class="advanced">
           <summary>Advanced</summary>
           <div class="field">
@@ -562,12 +567,8 @@
         <fieldset class="stack battery-fields">
           <legend>Battery rules</legend>
           <div class="field">
-            <label for="host-power-source">Decides by</label>
-            <select class="select" id="host-power-source" name="power_source">
-              <option value="sentinel">Sentinels (default)</option>
-              <option value="battery">Battery monitor</option>
-              <option value="both">Both must agree</option>
-            </select>
+            <label for="host-power-source-trigger">Decides by</label>
+            {{ ui.select('power_source', [('sentinel', 'Sentinels (default)'), ('battery', 'Battery monitor'), ('both', 'Both must agree')], 'sentinel', id='host-power-source') }}
           </div>
           <p class="muted small">Leave a limit empty to use the default from the Battery tab.</p>
           <div class="form-grid">
@@ -596,7 +597,7 @@
 <dialog id="schedule-dialog" class="dialog form-dialog" aria-labelledby="schedule-dialog-title">
   <div>
     <header><h2 id="schedule-dialog-title">Add a schedule</h2></header>
-    <section>
+    <section class="scrollbar">
       <form method="post" id="schedule-form" action="{{ url_for('add_schedule') }}" class="stack" data-add="{{ url_for('add_schedule') }}">
         {{ csrf() }}
         <div class="field">
@@ -610,19 +611,12 @@
         </fieldset>
         <div class="form-grid">
           <div class="field">
-            <label for="schedule-type">Repeats</label>
-            <select class="select" id="schedule-type" name="type">
-              <option value="recurring">Every week</option>
-              <option value="one-time">Once</option>
-            </select>
+            <label for="schedule-type-trigger">Repeats</label>
+            {{ ui.select('type', [('recurring', 'Every week'), ('one-time', 'Once')], 'recurring', id='schedule-type') }}
           </div>
           <div class="field" data-type="recurring">
-            <label for="schedule-day">Day</label>
-            <select class="select" id="schedule-day" name="day_of_week">
-              {% for d in ['monday','tuesday','wednesday','thursday','friday','saturday','sunday'] %}
-              <option value="{{ d }}">{{ d | capitalize }}</option>
-              {% endfor %}
-            </select>
+            <label for="schedule-day-trigger">Day</label>
+            {{ ui.select('day_of_week', [('monday', 'Monday'), ('tuesday', 'Tuesday'), ('wednesday', 'Wednesday'), ('thursday', 'Thursday'), ('friday', 'Friday'), ('saturday', 'Saturday'), ('sunday', 'Sunday')], 'sunday', id='schedule-day') }}
           </div>
           <div class="field" data-type="one-time" hidden>
             <label for="schedule-date">Date</label>
@@ -703,15 +697,36 @@
   /* ---- machine dialog ---- */
   var hostDialog = document.getElementById('host-dialog');
   var hostForm = document.getElementById('host-form');
-  var protectedSwitch = document.getElementById('host-protected');
-  function syncProtected() {
-    var on = protectedSwitch.checked;
-    hostForm.querySelectorAll('[data-protected-only]').forEach(function (el) { el.hidden = !on; });
-    /* A disabled field isn't sent, so an unprotected machine saves no delay. */
-    document.getElementById('host-delay').disabled = !on;
-    document.getElementById('host-ignore').disabled = !on;
+  var powerCut = document.getElementById('host-power-cut');
+  var whenBack = document.getElementById('host-when-back');
+  var hostMac = document.getElementById('host-mac');
+  var powerCutHelp = {
+    shutdown: 'Its UPS script shuts it down safely before the battery runs out. 0 minutes means straight away.',
+    keep: 'It stays on until the power comes back or the battery runs flat.'
+  };
+  var whenBackHelp = {
+    wake: 'Sends it a wake-up signal over the network.',
+    leave: 'It starts by itself, or you start it.'
+  };
+  var machineNotes = {{ machine_notes | tojson }};
+  var noWakePrefixes = {{ no_wake_prefixes | tojson }};
+  var hostSection = null;
+  function macPrefix(value) { return (value || '').replace(/[^0-9a-f]/gi, '').slice(0, 6).toUpperCase(); }
+  function syncHostChoices() {
+    var off = uiChoice(powerCut) === 'shutdown';
+    var wake = uiChoice(whenBack) === 'wake';
+    document.getElementById('host-power-cut-help').textContent = powerCutHelp[off ? 'shutdown' : 'keep'];
+    document.getElementById('host-when-back-help').textContent = whenBackHelp[wake ? 'wake' : 'leave'];
+    hostForm.querySelectorAll('[data-shutdown-only]').forEach(function (el) { el.hidden = !off; });
+    /* A disabled field isn't sent, so a machine that keeps running saves no delay. */
+    document.getElementById('host-delay').disabled = !off;
+    document.getElementById('host-test').disabled = !off;
+    var note = (hostSection && machineNotes[hostSection]) || {};
+    document.getElementById('host-old-script').hidden = off || !note.script_too_old;
+    document.getElementById('host-no-wake').hidden =
+      !wake || noWakePrefixes.indexOf(macPrefix(hostMac.value)) === -1;
   }
-  protectedSwitch.addEventListener('change', syncProtected);
+  [powerCut, whenBack].forEach(function (el) { el.addEventListener('change', syncHostChoices); });
   var hostFields = { NAME: 'host-name', IP: 'host-ip', MAC: 'host-mac', BROADCAST_IP: 'host-broadcast',
     SHUTDOWN_SOC: 'host-shutdown-soc', WOL_MIN_SOC: 'host-wol-min-soc', SHUTDOWN_VOLTAGE: 'host-shutdown-voltage',
     CRITICAL_VOLTAGE: 'host-critical-voltage', MIN_RUNTIME_MINUTES: 'host-min-runtime' };
@@ -725,23 +740,28 @@
       if (el) el.value = h[key] || '';
     });
     var delay = h.SHUTDOWN_DELAY_MINUTES;
-    protectedSwitch.checked = section ? (delay !== undefined && delay !== '') : true;
+    var off = section ? (delay !== undefined && delay !== '') : true;
+    uiChoice(powerCut, off ? 'shutdown' : 'keep');
     document.getElementById('host-delay').value = delay || '0';
-    document.getElementById('host-ignore').checked = h.IGNORE_SIMULATION === 'true';
-    document.getElementById('host-auto').checked = (h.AUTO_WOL || 'true') !== 'false';
+    /* A machine switched over from "keep running" joins test mode by default. */
+    document.getElementById('host-test').checked = !off || h.IGNORE_SIMULATION !== 'true';
+    uiChoice(whenBack, (h.AUTO_WOL || 'true') !== 'false' ? 'wake' : 'leave');
+    hostSection = section;
     var source = document.getElementById('host-power-source');
-    if (source) source.value = h.POWER_SOURCE || 'sentinel';
+    if (source) uiChoice(source, h.POWER_SOURCE || 'sentinel');
     document.getElementById('host-dialog-title').textContent = section ? 'Edit ' + (h.NAME || 'machine') : 'Add a machine';
     document.getElementById('host-submit').textContent = section ? 'Save changes' : 'Add machine';
     hostForm.querySelector('details.advanced').open = !!h.BROADCAST_IP;
-    syncProtected();
+    syncHostChoices();
     hostDialog.showModal();
+    hostDialog.querySelector('section').scrollTop = 0;
   }
 
   /* Tidy MAC addresses as they are typed: 001132aabbcc -> 00:11:32:AA:BB:CC */
   document.getElementById('host-mac').addEventListener('input', function (e) {
     var hex = e.target.value.replace(/[^0-9a-f]/gi, '').slice(0, 12);
     e.target.value = (hex.match(/.{1,2}/g) || []).join(':').toUpperCase();
+    syncHostChoices();
   });
 
   /* ---- schedule dialog ---- */
@@ -750,7 +770,7 @@
   var typeSelect = document.getElementById('schedule-type');
   function syncType() {
     scheduleForm.querySelectorAll('[data-type]').forEach(function (el) {
-      var on = el.dataset.type === typeSelect.value;
+      var on = el.dataset.type === uiChoice(typeSelect);
       el.hidden = !on;
       el.querySelectorAll('input, select').forEach(function (i) { i.required = on; });
     });
@@ -763,8 +783,8 @@
     scheduleForm.action = section ? '/edit_schedule/' + encodeURIComponent(section) : scheduleForm.dataset.add;
     document.getElementById('schedule-name').value = s.NAME || '';
     document.getElementById(s.ACTION === 'stop' ? 'schedule-stop' : 'schedule-start').checked = true;
-    typeSelect.value = s.TYPE === 'one-time' ? 'one-time' : 'recurring';
-    document.getElementById('schedule-day').value = s.DAY_OF_WEEK || 'sunday';
+    uiChoice(typeSelect, s.TYPE === 'one-time' ? 'one-time' : 'recurring');
+    uiChoice('schedule-day', s.DAY_OF_WEEK || 'sunday');
     document.getElementById('schedule-date').value = s.DATE || '';
     document.getElementById('schedule-time').value = s.TIME || '03:00';
     // Turning a one-time schedule back on after it ran: ask for a new date.
@@ -812,19 +832,23 @@
   document.addEventListener('change', function (e) {
     var input = e.target;
     if (input.dataset.autosaveChoice) {
+      /* A ui.select dropdown: its value lives in a hidden input, and putting
+         it back with uiChoice doesn't fire another change (and save). */
       var before = input.dataset.saved;
-      input.disabled = true;
-      post('{{ url_for("save_choice") }}', { name: input.dataset.autosaveChoice, value: input.value })
+      var chosen = uiChoice(input);
+      var trigger = input.querySelector('button');
+      trigger.disabled = true;
+      post('{{ url_for("save_choice") }}', { name: input.dataset.autosaveChoice, value: chosen })
         .then(function (reply) {
-          if (reply.success) { input.dataset.saved = input.value; window.uiToast('success', reply.message); }
-          else { input.value = before; window.uiToast('error', reply.message || "That didn't save. Please try again."); }
+          if (reply.success) { input.dataset.saved = chosen; window.uiToast('success', reply.message); }
+          else { uiChoice(input, before); window.uiToast('error', reply.message || "That didn't save. Please try again."); }
         })
         .catch(function (e) {
           if (e.message === 'signed out') return;
-          input.value = before;
+          uiChoice(input, before);
           window.uiToast('error', "That didn't save.", "The server didn't answer. Check it's running and try again.");
         })
-        .finally(function () { input.disabled = false; });
+        .finally(function () { trigger.disabled = false; });
     } else if (input.dataset.autosave) {
       flip(input, '{{ url_for("save_switch") }}', { name: input.dataset.autosave, state: input.checked ? 'on' : 'off' });
     } else if (input.dataset.scheduleToggle) {

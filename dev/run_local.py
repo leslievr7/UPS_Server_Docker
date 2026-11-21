@@ -203,14 +203,17 @@ class World:
                 if not ip:
                     continue
                 seen.add(ip)
+                turns_off = 'SHUTDOWN_DELAY_MINUTES' in params
                 machine = self.machines.setdefault(ip, {
-                    'on': True, 'agent': True, 'wakes': True,
+                    'on': True, 'agent': turns_off, 'wakes': True, 'old_script': False,
                     'boot_at': None, 'off_at': None, 'flag_since': None,
-                    'next_config_at': 0, 'config': None,
+                    'next_config_at': 0, 'config': None, 'keep_logged': False,
                 })
                 machine['name'] = params.get('NAME', section)
                 machine['mac'] = params.get('MAC', '').lower()
-                machine['ups_client'] = 'SHUTDOWN_DELAY_MINUTES' in params
+                # Machines that turn themselves off sit on the UPS, and so does
+                # any machine running the UPS script; the rest are on the grid.
+                machine['ups_client'] = turns_off or machine['agent']
             for ip in [ip for ip in self.machines if ip not in seen]:
                 del self.machines[ip]
             self.sentinels = config.get('SENTINEL_HOSTS', '').split()
@@ -340,7 +343,7 @@ def api_call(method, path, payload=None):
 
 
 def agent_pass(ip, m):
-    """One check of a pretend agent, mirroring ups_monitor.sh v4.4.0."""
+    """One check of a pretend agent, mirroring ups_monitor.sh v4.5.0 (or 4.4.0 when old)."""
     now = time.time()
     if now >= m['next_config_at'] or m['config'] is None:
         try:
@@ -351,20 +354,30 @@ def agent_pass(ip, m):
 
     delay = int(m['config'].get('SHUTDOWN_DELAY_MINUTES', 5)) * 60
     ignore = bool(m['config'].get('IGNORE_SIMULATION'))
+    # Scripts before 4.5.0 don't know SHUTDOWN_ENABLED.
+    keep_running = not m['old_script'] and m['config'].get('SHUTDOWN_ENABLED') is False
 
     status = api_call('GET', f'/upsc?ip={ip}')
     ups = status.get('ups', {})
     current, simulation = ups.get('status'), ups.get('simulation') is True
 
     def report(state, remaining=None, delay_min=None):
-        api_call('POST', '/status', {'ip': ip, 'status': state,
-                                     'remaining_seconds': remaining,
-                                     'shutdown_delay': delay_min})
+        payload = {'ip': ip, 'status': state, 'remaining_seconds': remaining,
+                   'shutdown_delay': delay_min}
+        if not m['old_script']:
+            payload['client_version'] = '4.5.0'
+        api_call('POST', '/status', payload)
 
     if current == 'OB LB':
         if simulation and ignore:
             m['flag_since'] = None
             report('online')
+        elif keep_running:
+            m['flag_since'] = None
+            if not m['keep_logged']:
+                WORLD.log(f"{m['name']}: agent keeps the machine running through the power cut")
+                m['keep_logged'] = True
+            report('on_battery')
         elif delay == 0 or (m['flag_since'] and now - m['flag_since'] >= delay):
             report('shutting_down')
             m['flag_since'] = None
@@ -377,6 +390,7 @@ def agent_pass(ip, m):
         else:
             report('shutdown_pending', int(delay - (now - m['flag_since'])), delay // 60)
     elif current == 'OL':
+        m['keep_logged'] = False
         if m['flag_since']:
             WORLD.log(f"{m['name']}: agent cancelled its countdown, power is back")
         m['flag_since'] = None
@@ -521,7 +535,7 @@ def register_dev_routes(web_app, power_manager):
         ip = request.form.get('ip')
         if name in actions:
             actions[name]()
-        elif ip and ip in WORLD.machines and name in ('power', 'agent', 'wakes'):
+        elif ip and ip in WORLD.machines and name in ('power', 'agent', 'wakes', 'script'):
             with WORLD.lock:
                 m = WORLD.machines[ip]
                 if name == 'power':
@@ -531,6 +545,10 @@ def register_dev_routes(web_app, power_manager):
                 elif name == 'agent':
                     m['agent'] = not m['agent']
                     WORLD.log(f"{m['name']}: agent {'installed' if m['agent'] else 'removed'}")
+                elif name == 'script':
+                    m['old_script'] = not m['old_script']
+                    m['next_config_at'] = 0
+                    WORLD.log(f"{m['name']}: agent is now version {'4.4.0' if m['old_script'] else '4.5.0'}")
                 else:
                     m['wakes'] = not m['wakes']
                     WORLD.log(f"{m['name']}: {'responds to' if m['wakes'] else 'ignores'} Wake-on-LAN")
@@ -583,8 +601,8 @@ async function refresh(){const s=await (await fetch('/dev/state')).json();
  document.getElementById('summary').innerHTML=`Grid: ${pill(s.grid_on,'on','OFF')} &nbsp; Test mode: ${pill(!s.test_mode,'off','ON')} &nbsp; Power manager: <b>${s.manager_state}</b> &nbsp; UPS says: <b>${s.ups_status}</b>`;
  const b=s.battery;document.getElementById('battery').innerHTML=s.battery_enabled?`SoC <b>${b.soc.toFixed(1)}%</b> &middot; ${b.voltage.toFixed(2)} V &middot; ${b.current.toFixed(1)} A`:'Battery monitor is disabled in the sandbox settings.';
  document.getElementById('machines').innerHTML=Object.entries(s.machines).map(([ip,m])=>`<tr><td>${m.name}${m.ups_client?'':' <span class=pill>WoL only</span>'}</td><td>${ip}</td>
- <td>${pill(m.on,'on','off',m.boot_at?'booting':m.off_at?'shutting down':'')}</td><td>${m.ups_client?pill(m.agent,'running','none'):'&ndash;'}</td><td>${pill(m.wakes,'works','ignored')}</td>
- <td><button onclick="act('power','${ip}')">Power</button>${m.ups_client?`<button onclick="act('agent','${ip}')">Agent</button>`:''}<button onclick="act('wakes','${ip}')">WoL fault</button></td></tr>`).join('');
+ <td>${pill(m.on,'on','off',m.boot_at?'booting':m.off_at?'shutting down':'')}</td><td>${pill(m.agent,'running '+(m.old_script?'4.4.0':'4.5.0'),'none')}</td><td>${pill(m.wakes,'works','ignored')}</td>
+ <td><button onclick="act('power','${ip}')">Power</button><button onclick="act('agent','${ip}')">Agent</button><button onclick="act('script','${ip}')">Old/new script</button><button onclick="act('wakes','${ip}')">WoL fault</button></td></tr>`).join('');
  document.getElementById('events').textContent=s.events.join('\\n')||'Nothing yet.';
  document.getElementById('emails').textContent=s.emails.map(e=>`${e.time}  ${e.subject}\\n${e.body}\\n`).join('\\n')||'None yet.';}
 refresh();setInterval(refresh,2000);

@@ -11,6 +11,36 @@
 </svg>
 {%- endmacro %}
 
+{#
+  A dropdown in the shadcn style (Basecoat's select, vendor/basecoat/select.min.js).
+  options: list of (value, label). The chosen value is sent in a hidden input
+  called `name` (leave name empty for dropdowns that save on their own).
+  Labels should point at "<id>-trigger". It opens upwards by itself when there
+  isn't room below (base.html); side="top" always opens it upwards.
+  In scripts, read or set the value with uiChoice() from base.html.
+#}
+{% macro select(name, options, value='', id=None, side=None, cls='', attrs='') -%}
+{% set sid = id or name %}
+{% set ns = namespace(current=options[0]) %}
+{% for option in options %}{% if option[0] == value %}{% set ns.current = option %}{% endif %}{% endfor %}
+<div class="select{% if cls %} {{ cls }}{% endif %}" id="{{ sid }}" {{ attrs | safe }}>
+  <button type="button" class="btn" data-variant="outline" id="{{ sid }}-trigger"
+          aria-haspopup="listbox" aria-expanded="false" aria-controls="{{ sid }}-listbox">
+    <span class="truncate">{{ ns.current[1] }}</span>
+    {{ icon('chevron-down', cls='select-chevron') }}
+  </button>
+  <div id="{{ sid }}-popover" data-popover aria-hidden="true"{% if side %} data-side="{{ side }}" data-side-locked{% endif %}>
+    <div role="listbox" id="{{ sid }}-listbox" aria-orientation="vertical" aria-labelledby="{{ sid }}-trigger">
+      {% for option in options %}
+      <div role="option" id="{{ sid }}-option-{{ loop.index }}" data-value="{{ option[0] }}"
+           {% if option[0] == ns.current[0] %}aria-selected="true"{% endif %}>{{ option[1] }}</div>
+      {% endfor %}
+    </div>
+  </div>
+  <input type="hidden"{% if name %} name="{{ name }}"{% endif %} value="{{ ns.current[0] }}">
+</div>
+{%- endmacro %}
+
 {# A pill-shaped status label. tone: success, warning, info, danger, muted. #}
 {% macro badge(label, tone="muted", icon_name=None) -%}
 <span class="badge" data-variant="{{ tone }}">{% if icon_name %}{{ icon(icon_name) }}{% endif %}{{ label }}</span>

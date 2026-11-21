@@ -15,6 +15,7 @@ Tones map to colours in the theme: success (green), warning (amber), danger
 
 from datetime import datetime, timedelta, timezone
 
+import machine_roles
 import network_scan
 
 WEEKDAYS = ['monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday', 'sunday']
@@ -79,23 +80,26 @@ def section_number(section):
 
 # --- machines ----------------------------------------------------------------
 
-AGENT_STATUSES = ('online', 'shutdown_pending', 'shutting_down')
+AGENT_STATUSES = machine_roles.AGENT_STATUSES
 # Logic keys off these internal names, never the visible label, so two states
 # can share a word ("Offline") without being confused.
-ATTENTION_KEYS = ('no_agent', 'stale', 'offline', 'wake_failed')
+ATTENTION_KEYS = ('no_agent', 'stale', 'offline', 'wake_failed', 'old_script')
 OFF_KEYS = ('off_expected', 'offline')
 
 
-def machine_status(kind, reachable, record, age, stale_seconds, power_cut):
+def machine_status(kind, reachable, record, age, stale_seconds, power_cut, old_script=False):
     """Decide a machine's label, tone and icon.
 
     Args:
-        kind: 'client' (runs the UPS script) or 'wol' (Wake-on-LAN only).
+        kind: 'client' (turns itself off in a power cut) or 'wol' (keeps
+            running; it may still run the UPS script, to report in).
         reachable: whether it answered a ping on the last check.
         record: its entry in client_status.json, or None.
         age: seconds since that entry was written, or None.
         stale_seconds: CLIENT_STALE_TIMEOUT_MINUTES in seconds.
         power_cut: True while the sentinels report an outage.
+        old_script: a "keep running" machine whose UPS script is too old to
+            know that, so it will still turn itself off.
     """
     status = (record or {}).get('status')
 
@@ -134,6 +138,15 @@ def machine_status(kind, reachable, record, age, stale_seconds, power_cut):
                       'Something went wrong while sending the wake-up signal.')
 
     if kind == 'wol':
+        fresh = status in AGENT_STATUSES and age is not None and age < stale_seconds
+        if status == 'on_battery' and fresh:
+            return result('on_battery', 'Staying on', 'info', 'battery-charging',
+                          'Set to keep running through the power cut.')
+        if old_script and reachable and fresh:
+            return result('old_script', 'Update UPS script', 'warning', 'triangle-alert',
+                          "Its UPS script is too old to keep running, so it will still turn "
+                          f"itself off {machine_roles.OLD_SCRIPT_DELAY} minutes into a power cut. "
+                          "Update the script on this machine.")
         if reachable:
             return result('online', 'Online', 'success', 'circle-check')
         if power_cut:
@@ -176,7 +189,8 @@ def build_machines(wake_hosts, client_statuses, reach_hosts, power_state, stale_
         stamp = parse_utc((record or {}).get('timestamp'))
         age = (now - stamp).total_seconds() if stamp else None
 
-        status = machine_status(kind, reachable, record, age, stale_seconds, power_cut)
+        status = machine_status(kind, reachable, record, age, stale_seconds, power_cut,
+                                old_script=machine_roles.old_script(params, record))
         auto_wol = params.get('AUTO_WOL', 'true').strip().lower() != 'false'
         if restoring and not reachable and status['key'] in OFF_KEYS:
             if auto_wol and params.get('MAC'):
@@ -200,7 +214,7 @@ def build_machines(wake_hosts, client_statuses, reach_hosts, power_state, stale_
 
         agent_seen = None
         agent_text = 'Never reported'
-        if kind == 'client' and record and record.get('status') in AGENT_STATUSES:
+        if record and record.get('status') in AGENT_STATUSES:
             agent_seen = iso(stamp)
             seen_age = (now - stamp).total_seconds()
             # Only say when it last reported if that is worth worrying about;
@@ -226,6 +240,7 @@ def build_machines(wake_hosts, client_statuses, reach_hosts, power_state, stale_
             'name': params.get('NAME') or section,
             'ip': ip,
             'kind': kind,
+            'runs_script': machine_roles.has_reported(record),
             'icon': 'server' if kind == 'client' else 'monitor',
             'reachable': reachable,
             'status': status,
@@ -234,6 +249,7 @@ def build_machines(wake_hosts, client_statuses, reach_hosts, power_state, stale_
             'agent_text': agent_text,
             'delay_text': None if delay is None else ('Immediately' if delay == 0 else f'After {delay} min'),
             'auto_wol': auto_wol,
+            'cant_wake': machine_roles.cant_wake(params.get('MAC'), machine_roles.no_wake_prefixes()),
             'ignores_test_mode': is_true(params.get('IGNORE_SIMULATION')),
             # Waking a machine during a power cut would only drain the UPS.
             'can_wake': bool(params.get('MAC')) and not reachable and not power_cut,

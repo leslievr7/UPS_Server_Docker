@@ -19,6 +19,7 @@ from werkzeug.exceptions import HTTPException
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import client_status as client_status_store  # noqa: E402
+import machine_roles  # noqa: E402
 
 # Add current directory to path for imports
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -480,14 +481,17 @@ def get_config():
         # Extract only the needed parameters for the client
         response_config = {}
         
-        # Get shutdown delay (required)
-        shutdown_delay = client_config.get('SHUTDOWN_DELAY_MINUTES')
-        if shutdown_delay:
-            response_config['SHUTDOWN_DELAY_MINUTES'] = shutdown_delay
+        # A machine without a delay is set to keep running in a power cut.
+        # UPS_monitor 4.5.0+ reads SHUTDOWN_ENABLED and never shuts it down.
+        # Older scripts don't know that key and treat a missing delay as 0
+        # (shut down at once), so they keep getting the old 5-minute default;
+        # the settings page and dashboard warn about those machines.
+        keep_running = not machine_roles.turns_off(client_config)
+        response_config['SHUTDOWN_ENABLED'] = not keep_running
+        if keep_running:
+            response_config['SHUTDOWN_DELAY_MINUTES'] = machine_roles.OLD_SCRIPT_DELAY
         else:
-            # Default to 5 minutes if not specified
-            response_config['SHUTDOWN_DELAY_MINUTES'] = '5'
-            app.logger.warning(f"No SHUTDOWN_DELAY_MINUTES found for {client_ip}, using default: 5")
+            response_config['SHUTDOWN_DELAY_MINUTES'] = client_config.get('SHUTDOWN_DELAY_MINUTES')
         
         # Generate UPS_NAME
         ups_name = get_ups_name()
@@ -496,7 +500,9 @@ def get_config():
 
         # Add ignore simulation setting
         ignore_simulation = client_config.get('IGNORE_SIMULATION', 'false').lower()
-        response_config['IGNORE_SIMULATION'] = ignore_simulation == 'true'
+        # A machine that keeps running in a real power cut sits out test mode
+        # too - which also keeps older scripts from turning it off in rehearsals.
+        response_config['IGNORE_SIMULATION'] = keep_running or ignore_simulation == 'true'
 
         app.logger.info(f"Generated configuration for {client_ip}: {response_config}")
         return jsonify(response_config)
@@ -527,6 +533,10 @@ def update_client_status():
         'shutdown_delay': data.get('shutdown_delay', None),
         'timestamp': datetime.utcnow().isoformat() + "Z"
     }
+    # UPS_monitor 4.5.0+ says which version it is; older scripts send nothing.
+    version = data.get('client_version')
+    if isinstance(version, str) and machine_roles.parse_version(version):
+        client_status['client_version'] = version.strip()[:20]
 
     # Several API workers (and the power manager) can write at the same moment;
     # client_status takes care of taking turns.

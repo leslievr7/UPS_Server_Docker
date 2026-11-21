@@ -16,6 +16,34 @@
       var dark = mode === 'dark' || (mode === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
       document.documentElement.classList.toggle('dark', dark);
     })();
+    /* Read (uiChoice(el)) or set (uiChoice(el, value)) a dropdown made with
+       ui.select, without firing its change event. Works before Basecoat has
+       set the dropdown up, too: it reads the hidden input when it starts. */
+    window.uiChoice = function (el, value) {
+      if (typeof el === 'string') el = document.getElementById(el);
+      var input = el.querySelector(':scope > input[type="hidden"]');
+      if (arguments.length < 2) return input.value;
+      input.value = value;
+      if (el.refresh) el.refresh();
+    };
+    /* Open a dropdown upwards when its list won't fit below it, inside a
+       scrolling pop-up or the window (like shadcn does). Basecoat announces
+       every opening with a "basecoat:popover" event, just before showing it. */
+    document.addEventListener('basecoat:popover', function (e) {
+      var host = e.detail && e.detail.source;
+      if (!host || !host.matches || !host.matches('div.select')) return;
+      var pop = host.querySelector(':scope > [data-popover]');
+      if (!pop || pop.hasAttribute('data-side-locked')) return;
+      var top = 0, bottom = window.innerHeight;
+      for (var a = host.parentElement; a && a !== document.body; a = a.parentElement) {
+        var oy = getComputedStyle(a).overflowY, r = a.getBoundingClientRect();
+        if (oy !== 'visible' && r.height > 0) { top = Math.max(top, r.top); bottom = Math.min(bottom, r.bottom); }
+      }
+      var box = host.getBoundingClientRect(), needed = pop.offsetHeight + 8;
+      var below = bottom - box.bottom, above = box.top - top;
+      if (below < needed && above > below) pop.setAttribute('data-side', 'top');
+      else pop.removeAttribute('data-side');
+    });
   </script>
   <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23f59e0b' stroke-width='2.2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M4 14a1 1 0 0 1-.78-1.63l9.9-10.2a.5.5 0 0 1 .86.46l-1.92 6.02A1 1 0 0 0 13 10h7a1 1 0 0 1 .78 1.63l-9.9 10.2a.5.5 0 0 1-.86-.46l1.92-6.02A1 1 0 0 0 11 14z'/%3E%3C/svg%3E">
   <link rel="stylesheet" id="basecoat-css" href="{{ url_for('static', filename='vendor/basecoat/basecoat.min.css') }}">
@@ -119,6 +147,7 @@
   <script src="{{ url_for('static', filename='vendor/basecoat/basecoat.min.js') }}" defer></script>
   <script src="{{ url_for('static', filename='vendor/basecoat/dropdown-menu.min.js') }}" defer></script>
   <script src="{{ url_for('static', filename='vendor/basecoat/tabs.min.js') }}" defer></script>
+  <script src="{{ url_for('static', filename='vendor/basecoat/select.min.js') }}" defer></script>
   <script src="{{ url_for('static', filename='vendor/basecoat/toast.min.js') }}" defer></script>
   <script>
     /* Toasts: one way to show a message from any page script, plus a close

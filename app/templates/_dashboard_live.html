@@ -35,6 +35,9 @@
       <dd>{{ m.agent_text }}</dd>
       <dt>Shuts down</dt><dd>{{ m.delay_text }}</dd>
       {% if m.ignores_test_mode %}<dt>Test mode</dt><dd>Ignored</dd>{% endif %}
+    {% else %}
+      <dt>In a power cut</dt><dd>Keeps running</dd>
+      {% if m.runs_script %}<dt>UPS script</dt><dd>{{ m.agent_text }}</dd>{% endif %}
     {% endif %}
     {% if m.verdict %}
       <dt>Battery rule says</dt><dd>{{ m.verdict.decision }}{% if m.verdict.observe %} <span class="muted">(observing)</span>{% endif %}</dd>
@@ -44,7 +47,7 @@
 
   <div class="machine-foot">
     <span class="muted small">
-      {% if not m.has_mac %}No MAC address{% elif m.auto_wol %}Wakes automatically{% else %}Auto-wake off{% endif %}
+      {% if not m.has_mac %}No MAC address{% elif not m.auto_wol %}Auto-wake off{% elif m.cant_wake %}Can't be woken (Raspberry Pi){% else %}Wakes automatically{% endif %}
     </span>
     {% if m.has_mac %}
     <button type="button" class="btn right" data-variant="outline" data-size="sm"
@@ -113,8 +116,8 @@
 
   <section>
     <div class="section-title">
-      <h2>Protected machines</h2><span class="count">{{ view.clients | length }}</span>
-      {{ ui.info('tip-protected', "They run the UPS script, so they turn themselves off safely in a power cut and are woken again afterwards.") }}
+      <h2>Turn off in a power cut</h2><span class="count">{{ view.clients | length }}</span>
+      {{ ui.info('tip-protected', "Their UPS script turns them off safely in a power cut. They can be woken again afterwards.") }}
     </div>
     {% if view.clients %}
       <div class="grid-auto" style="--min:17rem">
@@ -130,8 +133,8 @@
   {% if view.others %}
   <section>
     <div class="section-title">
-      <h2>Other machines</h2><span class="count">{{ view.others | length }}</span>
-      {{ ui.info('tip-others', "Woken after a power cut, but they don't run the UPS script, so they aren't turned off safely first.") }}
+      <h2>Keep running</h2><span class="count">{{ view.others | length }}</span>
+      {{ ui.info('tip-others', "They aren't turned off in a power cut. They stay on until the power comes back or the UPS battery runs flat.") }}
     </div>
     <div class="grid-auto" style="--min:17rem">
       {% for m in view.others %}{{ machine_card(m) }}{% endfor %}

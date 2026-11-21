@@ -17,6 +17,7 @@ from email.utils import formataddr
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import client_status
 import config_store
+import machine_roles
 import reachability
 from battery_monitor import BatteryMonitor
 from power_source import (
@@ -1646,15 +1647,19 @@ class PowerManager:
         stale_minutes = int(self.config.get('CLIENT_STALE_TIMEOUT_MINUTES', 5))
         
         for section, params in self.wake_hosts.items():
-            if 'SHUTDOWN_DELAY_MINUTES' not in params: 
-                continue
-                
             ip, name = params.get('IP'), params.get('NAME', 'N/A')
-            if not ip: 
+            if not ip:
                 continue
-                
+
             status_data = client_statuses.get(ip)
-            if not status_data: 
+            if not status_data:
+                continue
+
+            # Machines set to keep running are watched only once their UPS
+            # script can actually keep them running (4.5.0+); they're expected
+            # to stay up through a power cut.
+            keep_running = not machine_roles.turns_off(params)
+            if keep_running and not machine_roles.understands_keep_running(status_data):
                 continue
 
             # Check for shutdown notification
@@ -1688,7 +1693,7 @@ class PowerManager:
                     # shutting down, until it's woken. A woken machine gets the
                     # wake-up check time to start before it counts as stale.
                     last_status = str(status_data.get('status', ''))
-                    expected_off = (self.power_state == "POWER_FAIL"
+                    expected_off = ((self.power_state == "POWER_FAIL" and not keep_running)
                                     or last_status == 'shutdown_pending')
                     allowed = stale_minutes * 60
                     if last_status.startswith('wol_'):

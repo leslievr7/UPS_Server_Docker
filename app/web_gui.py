@@ -27,6 +27,7 @@ from api import API_TOKEN, get_ups_name, get_server_ip, read_power_state
 from battery_monitor import BatteryMonitor
 from dashboard_view import build_dashboard
 import config_store
+import machine_roles
 import reachability
 import web_auth
 import web_onboarding
@@ -355,12 +356,18 @@ def config():
         test_mode_acting = [h.get('NAME', s) for s, h in sorted(wake_hosts.items())
                             if 'SHUTDOWN_DELAY_MINUTES' in h
                             and h.get('IGNORE_SIMULATION', 'false') != 'true']
+        no_wake_prefixes = machine_roles.no_wake_prefixes()
+        machine_notes = machine_roles.machine_notes(wake_hosts, get_client_statuses(),
+                                                    no_wake_prefixes)
 
         return render_template('config.html',
                              pm_config=page_config,
                              smtp_password_set=smtp_password_set,
                              test_mode_acting=test_mode_acting,
                              wake_hosts=wake_hosts,
+                             machine_notes=machine_notes,
+                             no_wake_prefixes=no_wake_prefixes,
+                             old_script_delay=machine_roles.OLD_SCRIPT_DELAY,
                              ups_clients=ups_clients,
                              schedules=schedules,
                              schedules_past=[k for k, s in schedules.items() if one_time_is_past(s)],
@@ -438,6 +445,27 @@ def apply_battery_host_fields(host):
         else:
             host.pop(key, None)
 
+def read_machine_choices(form):
+    """The machine pop-up's answers, as settings values.
+
+    Returns (shutdown_delay, ignore_simulation, auto_wol, error). An empty
+    shutdown_delay means "keep running in a power cut". Forms that send the
+    raw fields instead (older pages, tests) are still understood.
+    """
+    if 'power_cut' not in form:
+        return (form.get('shutdown_delay', '').strip(),
+                'true' if 'ignore_simulation' in form else 'false',
+                'true' if 'auto_wol' in form else 'false', None)
+    auto_wol = 'false' if form.get('when_back') == 'leave' else 'true'
+    if form.get('power_cut') != 'shutdown':
+        # Keeping running in a real power cut means sitting out test mode too.
+        return '', 'true', auto_wol, None
+    delay = form.get('shutdown_delay', '').strip() or '0'
+    if not delay.isdigit() or int(delay) > 1440:
+        return None, None, None, 'Turn off after must be a whole number of minutes.'
+    return str(int(delay)), ('false' if 'join_test_mode' in form else 'true'), auto_wol, None
+
+
 @app.route('/add_wake_host', methods=['POST'])
 def add_wake_host():
     """Add new wake host"""
@@ -454,12 +482,13 @@ def add_wake_host():
         ip = request.form.get('ip', '').strip()
         mac = request.form.get('mac', '').strip()
         broadcast_ip = request.form.get('broadcast_ip', '').strip()
-        shutdown_delay = request.form.get('shutdown_delay', '').strip()
-        auto_wol = 'true' if 'auto_wol' in request.form else 'false'
-        ignore_simulation = 'true' if 'ignore_simulation' in request.form else 'false'
+        shutdown_delay, ignore_simulation, auto_wol, problem = read_machine_choices(request.form)
         
         if not all([name, ip, mac]):
             flash('Name, IP address and MAC address are all needed.', 'error')
+            return redirect(url_for('config') + '#machines')
+        if problem:
+            flash(problem, 'error')
             return redirect(url_for('config') + '#machines')
         if not validate_ip(ip):
             flash(f'Invalid IP address: {ip}', 'error')
@@ -502,12 +531,13 @@ def edit_wake_host(section):
         ip = request.form.get('ip', '').strip()
         mac = request.form.get('mac', '').strip()
         broadcast_ip = request.form.get('broadcast_ip', '').strip()
-        shutdown_delay = request.form.get('shutdown_delay', '').strip()
-        auto_wol = 'true' if 'auto_wol' in request.form else 'false'
-        ignore_simulation = 'true' if 'ignore_simulation' in request.form else 'false'
+        shutdown_delay, ignore_simulation, auto_wol, problem = read_machine_choices(request.form)
 
         if not all([name, ip, mac]):
             flash('Name, IP address and MAC address are all needed.', 'error')
+            return redirect(url_for('config') + '#machines')
+        if problem:
+            flash(problem, 'error')
             return redirect(url_for('config') + '#machines')
         if not validate_ip(ip):
             flash(f'Invalid IP address: {ip}', 'error')
