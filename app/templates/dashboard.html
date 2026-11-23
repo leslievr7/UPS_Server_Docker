@@ -5,7 +5,7 @@
 <div class="page-header">
   <h1>Dashboard</h1>
   <span class="live-chip" id="live-chip" data-side="bottom" data-align="end"
-        data-tooltip="{% if view and view.watch_stale %}The UPS server stopped checking the power{% else %}The UPS server checks power every 15 s{% endif %}{% if view and view.checked_local %} · last check {{ view.checked_local }}{% endif %}">
+        data-tooltip="{% if view and view.watch_stale %}The UPS server stopped checking the power{% else %}The UPS server checks power every 10 s{% endif %}{% if view and view.checked_local %} · last check {{ view.checked_local }}{% endif %}">
     <span class="status" id="live-label"
           {% if view and view.watch_stale %}data-tone="warning">Monitoring paused{% else %}data-tone="success" data-pulse>Monitoring{% endif %}</span>
   </span>
@@ -81,7 +81,7 @@
         if (r.headers.get('X-Watch-Stale') === '1') {
           setChip('warning', 'Monitoring paused', 'The UPS server stopped checking the power' + (checked ? ' · last check ' + checked : ''));
         } else {
-          setChip('success', 'Monitoring', 'The UPS server checks power every 15 s' + (checked ? ' · last check ' + checked : ''));
+          setChip('success', 'Monitoring', 'The UPS server checks power every 10 s' + (checked ? ' · last check ' + checked : ''));
         }
         return r.text();
       })

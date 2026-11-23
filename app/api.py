@@ -42,7 +42,7 @@ CLIENT_STATUS_FILE = "/var/run/nut/client_status.json"
 POWER_STATE_FILE = "/var/run/nut/power_state.json"
 
 # How long a power_state.json snapshot stays usable. power_manager.py refreshes
-# it every 15s; beyond this the cron job is presumed dead and we ignore the file
+# it every 10s; beyond this the cron job is presumed dead and we ignore the file
 # rather than serve decisions based on a stale battery reading.
 POWER_STATE_MAX_AGE_SECONDS = 90
 

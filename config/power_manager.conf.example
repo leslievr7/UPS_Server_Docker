@@ -74,8 +74,9 @@ BATTERY_MAX_DATA_AGE="60"
 # "OB LB" - so without a grace window a single missed poll shuts a host down. On
 # 2026-08-18 the UPS server itself was suspended for 56s; the battery API needed
 # a few more seconds than the manager to come back, and in that gap Synology
-# Chomik was told to shut down at 69.9% SoC. Four cycles is about a minute at the
-# default 15s poll. Set to 0 to fall back on the first miss (old behaviour).
+# Chomik was told to shut down at 69.9% SoC. Counted in 15-second steps whatever
+# the check rhythm, so four is about a minute. Set to 0 to fall back on the first
+# miss (old behaviour).
 BATTERY_FALLBACK_GRACE_CYCLES="4"
 
 # Usable capacity of the battery bank, in amp-hours. 0 means "not measured".
@@ -99,7 +100,8 @@ BATTERY_CAPACITY_AH="0"
 
 # How many consecutive checks the battery must report "on battery" while the
 # sentinel hosts are still reachable before that counts as a real outage of the
-# UPS supply itself. At the default 15s cadence, 8 is two minutes.
+# UPS supply itself. Counted in 15-second steps whatever the check rhythm, so 8
+# is two minutes.
 #
 # The sentinels answer "is there grid power in the building", which is not the
 # same question as "is the UPS being fed". A breaker or RCD tripping on the

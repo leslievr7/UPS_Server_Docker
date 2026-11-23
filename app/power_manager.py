@@ -44,9 +44,14 @@ SENTINEL_SILENCE_STATE_FILE = "/var/run/nut/sentinel_silence.json"
 UPS_STATE_FILE_DEFAULT = "/var/run/nut/virtual.device"
 LOCK_FILE = "/var/run/nut/power_manager.lock"
 
-# Sub-minute polling: 4 iterations x 15 seconds = 60 seconds per cron cycle
-CHECK_ITERATIONS = 4
-CHECK_INTERVAL_SECONDS = 15
+# Sub-minute polling: 6 iterations x 10 seconds = 60 seconds per cron cycle.
+# Upstream checks every 15s; 10s keeps the two-check outage confirmation below
+# from adding more than 10s on a small UPS.
+CHECK_ITERATIONS = 6
+CHECK_INTERVAL_SECONDS = 10
+# Settings that count checks (BATTERY_*_CYCLES) were written for the 15s rhythm
+# and are converted, so they keep their real-world length. See _checks_for().
+LEGACY_CHECK_SECONDS = 15
 # Consecutive checks in which every sentinel is silent before mains counts as
 # lost. See _confirm_sentinel_silence().
 OUTAGE_CONFIRM_CHECKS = 2
@@ -62,6 +67,19 @@ NOTIFY_DEFAULTS = {'WOL_FAILURE': 'true'}
 # Commands
 PING_CMD = "/bin/ping"
 WAKEONLAN_CMD = "/usr/bin/wakeonlan"
+
+
+def _checks_for(legacy_checks):
+    """Turn a count of 15s checks from the config into checks at today's rhythm.
+
+    BATTERY_FALLBACK_GRACE_CYCLES="4" has always meant about a minute, and
+    existing config files say "4", so it is converted rather than reinterpreted:
+    4 becomes 6 checks of 10s. 0 and 1 keep their documented meanings (fall
+    back at once, alert on the first reading).
+    """
+    if legacy_checks <= 1:
+        return legacy_checks
+    return legacy_checks * LEGACY_CHECK_SECONDS // CHECK_INTERVAL_SECONDS
 
 # --- Logger Setup ---
 def setup_logging(debug_mode=False):
@@ -386,7 +404,7 @@ class PowerManager:
                 underneath a simulation that already parked us in POWER_FAIL.
 
         Re-saving an unchanged state keeps its original timestamp. An
-        interrupted simulation writes POWER_FAIL on every 15s pass, and moving
+        interrupted simulation writes POWER_FAIL on every pass, and moving
         the timestamp each time made the outage duration reported on
         restoration measure from the last write rather than from the start.
         """
@@ -556,20 +574,16 @@ class PowerManager:
         log.info(f"Pinging sentinel hosts: {' '.join(sentinel_hosts)}")
         online_hosts_count = 0
 
-        # Check ALL sentinel hosts (matching original Bash behavior)
+        # All at once: one after another, each silent sentinel cost a second of
+        # the 10s check, about 5s in a power cut with five sentinels.
+        results = reachability.check(sentinel_hosts, ping_cmd=PING_CMD)
         for ip in sentinel_hosts:
-            try:
-                result = subprocess.run([PING_CMD, "-c", "1", "-W", "1", ip],
-                                      capture_output=True, timeout=3)
-                self.sentinel_results[ip] = result.returncode == 0
-                if result.returncode == 0:
-                    log.info(f"  -> Sentinel host {ip} is online.")
-                    online_hosts_count += 1
-                else:
-                    log.info(f"  -> Sentinel host {ip} is offline.")
-            except (subprocess.TimeoutExpired, OSError) as e:
-                self.sentinel_results[ip] = False
-                log.warning(f"  -> Failed to ping sentinel host {ip}: {e}")
+            self.sentinel_results[ip] = results.get(ip, False)
+            if self.sentinel_results[ip]:
+                log.info(f"  -> Sentinel host {ip} is online.")
+                online_hosts_count += 1
+            else:
+                log.info(f"  -> Sentinel host {ip} is offline.")
 
         log.info(f"Found {online_hosts_count} online sentinel hosts.")
         self.sentinel_online_count = online_hosts_count
@@ -874,7 +888,7 @@ class PowerManager:
                     deferred_hosts.append(params.get('NAME', ip))
                     continue
 
-            # A host still booting does not answer the ping yet, so every 15s
+            # A host still booting does not answer the ping yet, so every
             # pass sends it another packet. That is harmless, but announcing
             # each one sent four identical emails for PBS1 on 2026-09-15.
             if self._wake_host(params) == 'sent':
@@ -1040,7 +1054,7 @@ class PowerManager:
                 continue
 
             # Once the alert is out nothing urgent is left to decide, and every
-            # unanswered ping costs a second of the 15s budget - once a minute
+            # unanswered ping costs a second of the 10s budget - once a minute
             # is plenty.
             if entry.get('alerted') and self.iteration != 0:
                 continue
@@ -1150,7 +1164,7 @@ class PowerManager:
         """Run the wake-up sequence and decide whether the cycle is finished.
 
         Hosts gated on battery charge keep the POWER_RESTORED state alive so
-        they get another chance on the next 15s pass, up to WOL_MAX_WAIT_MINUTES.
+        they get another chance on the next pass, up to WOL_MAX_WAIT_MINUTES.
         """
         max_wait = int(self.config.get('WOL_MAX_WAIT_MINUTES', 240))
         waited = (now_ts - self.power_state_timestamp) // 60 if self.power_state_timestamp else 0
@@ -1253,12 +1267,12 @@ class PowerManager:
         """
         raw = self.config.get('BATTERY_FALLBACK_GRACE_CYCLES', 4)
         try:
-            return max(0, int(raw))
+            return _checks_for(max(0, int(raw)))
         except (TypeError, ValueError):
             log.warning(
                 "Invalid BATTERY_FALLBACK_GRACE_CYCLES '%s' - using 4", raw
             )
-            return 4
+            return _checks_for(4)
 
     def _read_battery_gap(self):
         """Load the consecutive-missed-poll counter, or 0 if unusable."""
@@ -1291,8 +1305,8 @@ class PowerManager:
                 "Invalid BATTERY_ONLY_OUTAGE_CYCLES '%s' - using 8",
                 self.config.get('BATTERY_ONLY_OUTAGE_CYCLES'),
             )
-            return 8
-        return max(1, value)
+            return _checks_for(8)
+        return _checks_for(max(1, value))
 
     def _read_battery_outage(self):
         """Load the battery-only outage counter and latch."""
@@ -1892,7 +1906,7 @@ if __name__ == "__main__":
             print(f"Warning: Cannot create {f}: {e}", file=sys.stderr)
 
     # Acquire lock file to prevent concurrent execution.
-    # Cron fires every minute, but we run for ~60 seconds (4 x 15s iterations).
+    # Cron fires every minute, but we run for ~60 seconds (6 x 10s iterations).
     lock_fd = None
     try:
         lock_fd = open(LOCK_FILE, 'w')

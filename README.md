@@ -24,10 +24,10 @@ Each machine is set either to **turn itself off** in a power cut (after a delay 
 The logic is simple but effective:
 ![Dashboard](/images/workflow.png)
 
-1.  **Monitor:** A cron job inside the container runs a script (`power_manager.py`) which pings a list of user-defined sentinel hosts every **15 seconds** (4 checks per minute) for rapid power failure detection.
+1.  **Monitor:** A cron job inside the container runs a script (`power_manager.py`) which pings a list of user-defined sentinel hosts every **10 seconds** (6 checks per minute, all sentinels at once) for rapid power failure detection.
 2.  **Decide:**
       * If **at least one** sentinel host is online, the script assumes grid power is OK and sets the virtual NUT server's status to `OL` (Online).
-      * If **all** sentinel hosts are offline, the script assumes a power failure and sets the status to `OB LB` (On Battery, Low Battery).
+      * If **all** sentinel hosts are offline on two checks in a row, the script assumes a power failure and sets the status to `OB LB` (On Battery, Low Battery). A single silent check is treated as a network glitch.
 3.  **Act & Report:**
     * NUT clients (`UPS_monitor` scripts) periodically check the server's status. When they detect `OB LB`, they initiate a graceful shutdown countdown.
     * Clients are responsible for **actively reporting their status** (e.g., `online`, `shutdown_pending` with remaining time) back to the server's API on every check.
@@ -665,8 +665,8 @@ checks while 3 of 3 sentinel hosts are still reachable - the UPS feed itself
 looks dead.
 ```
 
-It is debounced by `BATTERY_ONLY_OUTAGE_CYCLES` (default `8`, two minutes at
-the 15s cadence) because the same disagreement appears harmlessly at the end of
+It is debounced by `BATTERY_ONLY_OUTAGE_CYCLES` (default `8`, about two
+minutes) because the same disagreement appears harmlessly at the end of
 every ordinary outage: the sentinels boot the moment the grid returns, while
 the battery monitor still needs a few seconds of charge current to call it.
 That window was two cycles wide on the reference installation.
@@ -740,7 +740,7 @@ during a genuine outage, the hosts must still come down - but during an outage
 the sentinel verdict is `OB LB`, so a single missed poll is enough to shut a
 host down on the spot.
 
-`BATTERY_FALLBACK_GRACE_CYCLES` (default `4`, roughly a minute at the 15s poll)
+`BATTERY_FALLBACK_GRACE_CYCLES` (default `4`, roughly a minute)
 rides out short gaps. Inside the window each battery-sourced host keeps the
 verdict it was last given and the log says so:
 
@@ -766,7 +766,7 @@ WOL_MIN_SOC=95
 WOL_MAX_WAIT_MINUTES="240"   # global safety net, 0 disables the limit
 ```
 
-Deferred hosts show as *Waiting for charge* on the dashboard and are retried every 15 seconds. `WOL_MAX_WAIT_MINUTES` is the escape hatch: after that long, they are woken regardless, so a failed battery monitor cannot keep them asleep indefinitely.
+Deferred hosts show as *Waiting for charge* on the dashboard and are retried every 10 seconds. `WOL_MAX_WAIT_MINUTES` is the escape hatch: after that long, they are woken regardless, so a failed battery monitor cannot keep them asleep indefinitely.
 
 The gate applies to **every** host with `WOL_MIN_SOC` set, including hosts left on `POWER_SOURCE=sentinel`. It is about the state of the battery, not about which source decides shutdowns — and in practice the hungriest machine is often exactly the one kept on the sentinel source, because it is the cheapest to shed early. That makes it the one that most needs holding back until the bank has recovered. Setting the thresholds in reverse order of the shutdown sequence brings the most valuable host back first and the greediest one last.
 

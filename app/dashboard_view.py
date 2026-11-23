@@ -295,7 +295,7 @@ def build_banner(power_state, simulation, manager_state, machines, sentinels_onl
     if sentinels_total and sentinels_online == 0 and confirming:
         return {'tone': 'warning', 'icon': 'circle-alert',
                 'title': 'No sentinel is answering — checking again',
-                'text': "If they're still silent on the next check, in about 15 seconds, "
+                'text': "If they're still silent on the next check, in about 10 seconds, "
                         "it counts as a power cut."}
 
     if sentinels_total and sentinels_online == 0:
@@ -490,7 +490,7 @@ def build_dashboard(config, wake_hosts, schedules, power_state, client_statuses,
         'checked_at': iso(checked),
         'checked_text': checked_text,
         'checked_local': checked.astimezone().strftime('%H:%M:%S') if checked else None,
-        # The watchman checks every 15 s; over 90 s of silence means it has stopped.
+        # The watchman checks every 10 s; over 90 s of silence means it has stopped.
         'watch_stale': checked is None or (now - checked).total_seconds() > 90,
         'simulation': simulation,
         'power_cut': power_cut,

@@ -4,7 +4,7 @@ before a power cut, and log rotation rules that logrotate will actually read."""
 import os
 import re
 import sys
-from types import SimpleNamespace
+import time
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 sys.path.insert(0, os.path.join(ROOT, 'app'))
@@ -32,8 +32,8 @@ def fresh_manager(tmp_path, monkeypatch, answering, simulation=False, real_fail_
     """A new PowerManager per check, as each cron iteration is a new process."""
     monkeypatch.setattr(power_manager, 'SENTINEL_SILENCE_STATE_FILE',
                         str(tmp_path / 'sentinel_silence.json'))
-    monkeypatch.setattr(power_manager.subprocess, 'run',
-                        lambda cmd, **kw: SimpleNamespace(returncode=0 if cmd[-1] in answering else 1))
+    monkeypatch.setattr(power_manager.reachability, 'check',
+                        lambda ips, **kw: {ip: ip in answering for ip in ips})
     saved = []
     monkeypatch.setattr(power_manager, 'save_setting_to_config',
                         lambda key, value, **kw: saved.append((key, value)))
@@ -123,6 +123,51 @@ def test_dashboard_shows_a_confirmed_power_cut():
     state = {'sentinel': {'online': 0, 'total': 2, 'power': 'OFFLINE', 'confirming': False}}
     banner = dashboard_view.build_banner(state, False, {}, [], 0, 2, 1, '', None)
     assert banner['title'] == 'Power cut — shutting machines down'
+
+
+# --- 10-second checks ---------------------------------------------------------------------
+
+def test_six_checks_of_ten_seconds_fill_the_minute():
+    assert power_manager.CHECK_ITERATIONS == 6
+    assert power_manager.CHECK_INTERVAL_SECONDS == 10
+
+
+def test_silent_sentinels_are_pinged_at_once(tmp_path, monkeypatch):
+    # Five sentinels that never answer, with a ping that takes its full
+    # one-second timeout: one after another this was five seconds.
+    script = tmp_path / 'slow-ping'
+    script.write_text('#!/bin/sh\nsleep 1\nexit 1\n')
+    script.chmod(0o755)
+    monkeypatch.setattr(power_manager, 'PING_CMD', str(script))
+    monkeypatch.setattr(power_manager, 'SENTINEL_SILENCE_STATE_FILE',
+                        str(tmp_path / 'sentinel_silence.json'))
+    pm = power_manager.PowerManager.__new__(power_manager.PowerManager)
+    pm.config = {'SENTINEL_HOSTS': ' '.join(f'192.0.2.{n}' for n in range(1, 6))}
+    pm.sentinel_results = {}
+    pm.real_fail_notified = False
+    started = time.monotonic()
+    pm._determine_power_status()
+    assert time.monotonic() - started < 2.5
+    assert pm.sentinel_results == {f'192.0.2.{n}': False for n in range(1, 6)}
+
+
+def battery_manager(**config):
+    pm = power_manager.PowerManager.__new__(power_manager.PowerManager)
+    pm.config = config
+    return pm
+
+
+def test_battery_count_settings_keep_their_real_world_length():
+    # Written for 15s checks: 4 was a minute, 8 was two minutes.
+    assert battery_manager()._fallback_grace_cycles() == 6
+    assert battery_manager()._battery_only_outage_cycles() == 12
+    assert battery_manager(BATTERY_FALLBACK_GRACE_CYCLES='4')._fallback_grace_cycles() == 6
+    assert battery_manager(BATTERY_ONLY_OUTAGE_CYCLES='8')._battery_only_outage_cycles() == 12
+
+
+def test_battery_count_settings_keep_zero_and_one():
+    assert battery_manager(BATTERY_FALLBACK_GRACE_CYCLES='0')._fallback_grace_cycles() == 0
+    assert battery_manager(BATTERY_ONLY_OUTAGE_CYCLES='1')._battery_only_outage_cycles() == 1
 
 
 # --- log rotation -------------------------------------------------------------------------

@@ -7,7 +7,7 @@ Starts, in one process:
   - the Web GUI            http://127.0.0.1:8080   (control panel at /dev)
   - the UPS Hub API        http://127.0.0.1:5050
   - a fake Victron battery monitor on 127.0.0.1:5088
-  - the power manager loop (one pass every 15 s, like cron + sub-minute polling)
+  - the power manager loop (one pass every 10 s, like cron + sub-minute polling)
   - pretend UPS_monitor agents that poll the API exactly like the real client
 
 Nothing here can reach a real machine:
@@ -51,7 +51,7 @@ SANDBOX = os.environ.get('UPS_SANDBOX') or os.path.join(DEV_DIR, '.sandbox')
 WEB_PORT = int(os.environ.get('UPS_SANDBOX_WEB_PORT', '8080'))
 API_PORT = int(os.environ.get('UPS_SANDBOX_API_PORT', '5050'))
 VBM_PORT = int(os.environ.get('UPS_SANDBOX_VBM_PORT', '5088'))
-PASS_SECONDS = float(os.environ.get('UPS_SANDBOX_PASS_SECONDS', '15'))
+PASS_SECONDS = float(os.environ.get('UPS_SANDBOX_PASS_SECONDS', '10'))
 AGENT_SECONDS = 15
 BOOT_SECONDS = 20       # how long a pretend machine takes to boot after WoL
 SHUTDOWN_SECONDS = 8    # how long a pretend machine takes to power off
@@ -434,7 +434,7 @@ def manager_loop(power_manager):
         started = time.monotonic()
         with RUN_LOCK:
             try:
-                power_manager.PowerManager().run(iteration=iteration % 4)
+                power_manager.PowerManager().run(iteration=iteration % power_manager.CHECK_ITERATIONS)
             except SystemExit:
                 pass
             except Exception as e:
