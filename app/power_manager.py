@@ -40,12 +40,16 @@ BATTERY_WOL_STATE_FILE = "/var/run/nut/battery_wol.json"
 BATTERY_GAP_STATE_FILE = "/var/run/nut/battery_gap.json"
 BATTERY_OUTAGE_STATE_FILE = "/var/run/nut/battery_outage.json"
 WOL_WATCH_STATE_FILE = "/var/run/nut/wol_watch.json"
+SENTINEL_SILENCE_STATE_FILE = "/var/run/nut/sentinel_silence.json"
 UPS_STATE_FILE_DEFAULT = "/var/run/nut/virtual.device"
 LOCK_FILE = "/var/run/nut/power_manager.lock"
 
 # Sub-minute polling: 4 iterations x 15 seconds = 60 seconds per cron cycle
 CHECK_ITERATIONS = 4
 CHECK_INTERVAL_SECONDS = 15
+# Consecutive checks in which every sentinel is silent before mains counts as
+# lost. See _confirm_sentinel_silence().
+OUTAGE_CONFIRM_CHECKS = 2
 
 # A host that stays silent this long after its WoL alert is no longer watched.
 WOL_WATCH_EXPIRY_MINUTES = 24 * 60
@@ -312,6 +316,9 @@ class PowerManager:
         # actually gone right now, as opposed to power_status, which a
         # simulation window can hold at OFFLINE for hours.
         self.real_power_offline = False
+        # Every sentinel is silent, but not for long enough yet to call it a
+        # power cut. Published for the dashboard.
+        self.sentinel_confirming = False
         # Latch: a real outage has been mailed out and no restoration has
         # been mailed since. Without it an outage starting inside a
         # simulation window is silent, because the state machine is already
@@ -567,7 +574,7 @@ class PowerManager:
         log.info(f"Found {online_hosts_count} online sentinel hosts.")
         self.sentinel_online_count = online_hosts_count
 
-        real_power_offline = online_hosts_count == 0
+        real_power_offline = self._confirm_sentinel_silence(online_hosts_count == 0)
         # Published because the return value below cannot carry it: a simulation
         # window pins that to OFFLINE, which makes it useless for telling a
         # genuine outage apart from a scheduled one.
@@ -608,9 +615,74 @@ class PowerManager:
         elif real_power_offline:
             log.warning("All sentinel hosts are offline. Power is OFF.")
             return "OFFLINE"
+        elif self.sentinel_confirming:
+            log.info("Power is treated as ON until the next check confirms the silence.")
+            return "ONLINE"
         else:
             log.info("At least one sentinel host is online. Power is ON.")
             return "ONLINE"
+
+    def _read_silent_checks(self):
+        """How many checks in a row have found every sentinel silent."""
+        try:
+            with open(SENTINEL_SILENCE_STATE_FILE, 'r') as f:
+                return max(0, int(json.load(f).get('consecutive', 0)))
+        except FileNotFoundError:
+            return 0
+        except (IOError, ValueError, AttributeError, json.JSONDecodeError) as e:
+            log.warning(f"Cannot read sentinel silence state, starting fresh: {e}")
+            return 0
+
+    def _write_silent_checks(self, consecutive):
+        """Persist it atomically; each iteration is a fresh process.
+
+        Returns False if it couldn't be saved.
+        """
+        try:
+            temp_file = SENTINEL_SILENCE_STATE_FILE + ".tmp"
+            with open(temp_file, 'w') as f:
+                json.dump({'consecutive': consecutive}, f)
+            os.replace(temp_file, SENTINEL_SILENCE_STATE_FILE)
+            return True
+        except (IOError, OSError, TypeError) as e:
+            log.error(f"Cannot write sentinel silence state: {e}")
+            return False
+
+    def _confirm_sentinel_silence(self, all_silent):
+        """Whether mains counts as lost, given this check's sentinel reading.
+
+        Each sentinel gets one ping with a one-second timeout, so a dropped
+        reply or a busy switch can make every sentinel look dead for a single
+        pass. On 2026-11-23 every sentinel was silent for one 15s check and
+        three answered again 12s later; that one check was enough to declare
+        an outage and switch off a protected host with no shutdown delay.
+        Mains now counts as lost only after OUTAGE_CONFIRM_CHECKS silent
+        checks in a row, which delays a real outage by up to one interval.
+
+        An outage that has already been announced stays declared while the
+        silence lasts, so a missing or reset counter can never announce a
+        false restoration in the middle of one. If the counter can't be saved,
+        silence counts at once, as it did before: a count that can never reach
+        the threshold would hide every real outage.
+        """
+        self.sentinel_confirming = False
+        previous = self._read_silent_checks()
+        if not all_silent:
+            if previous:
+                log.info("A sentinel answered again; the silence was not a power cut.")
+                self._write_silent_checks(0)
+            return False
+
+        count = min(previous + 1, OUTAGE_CONFIRM_CHECKS)
+        saved = self._write_silent_checks(count) if count != previous else True
+        if self.real_fail_notified or count >= OUTAGE_CONFIRM_CHECKS or not saved:
+            return True
+
+        log.warning("All sentinel hosts are silent (check %d of %d). Waiting for "
+                    "the next check before declaring a power cut.",
+                    count, OUTAGE_CONFIRM_CHECKS)
+        self.sentinel_confirming = True
+        return False
 
     def _handle_power_offline(self):
         """Handle power offline state."""
@@ -1347,10 +1419,9 @@ class PowerManager:
 
         # The real sentinel verdict, without the simulation override that
         # _determine_power_status() folds in - the evaluator needs both facts
-        # separately to explain its reasoning.
-        sentinel_offline = (
-            self.sentinel_total_count > 0 and self.sentinel_online_count == 0
-        )
+        # separately to explain its reasoning. Confirmed silence only, so one
+        # lost round of pings can't shut a host down by this route either.
+        sentinel_offline = self.real_power_offline
 
         for section, params in self.wake_hosts.items():
             ip = params.get('IP')
@@ -1594,6 +1665,9 @@ class PowerManager:
                 'online': self.sentinel_online_count,
                 'total': self.sentinel_total_count,
                 'power': power_status,
+                # Additive: every sentinel is silent but the outage isn't
+                # confirmed yet.
+                'confirming': self.sentinel_confirming,
             },
             'simulation': self.config.get('POWER_SIMULATION_MODE', 'false').lower() == 'true',
             'decision_mode': self.evaluator.mode,
@@ -1692,9 +1766,11 @@ class PowerManager:
                     # a power cut (or test mode), and after it said it was
                     # shutting down, until it's woken. A woken machine gets the
                     # wake-up check time to start before it counts as stale.
+                    # The script's last report before it switches off is
+                    # shutting_down (shutdown_pending only covers a countdown).
                     last_status = str(status_data.get('status', ''))
                     expected_off = ((self.power_state == "POWER_FAIL" and not keep_running)
-                                    or last_status == 'shutdown_pending')
+                                    or last_status in ('shutdown_pending', 'shutting_down'))
                     allowed = stale_minutes * 60
                     if last_status.startswith('wol_'):
                         allowed = max(allowed, self._wol_confirm_timeout() * 60)

@@ -291,8 +291,15 @@ def build_banner(power_state, simulation, manager_state, machines, sentinels_onl
         return {'tone': 'warning', 'icon': 'flask-conical', 'title': 'Test mode is on',
                 'text': text, 'action': 'test_mode'}
 
+    confirming = ((power_state or {}).get('sentinel') or {}).get('confirming')
+    if sentinels_total and sentinels_online == 0 and confirming:
+        return {'tone': 'warning', 'icon': 'circle-alert',
+                'title': 'No sentinel is answering — checking again',
+                'text': "If they're still silent on the next check, in about 15 seconds, "
+                        "it counts as a power cut."}
+
     if sentinels_total and sentinels_online == 0:
-        counting = [m for m in clients if m['countdown']]
+        counting =[m for m in clients if m['countdown']]
         down = [m for m in clients if m['status']['key'] in OFF_KEYS]
         parts = []
         if since_local and state_name == 'POWER_FAIL':

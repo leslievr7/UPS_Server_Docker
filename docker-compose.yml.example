@@ -53,8 +53,9 @@ services:
       # Mount the local './config/nut' directory to '/etc/nut' inside the container.
       - ./config:/etc/nut
 
-      # Mount the log rotation configuration
-      - ./logrotate/power-manager-logrotate:/etc/logrotate.d/power-manager-logrotate
+      # Log rotation rules are built into the image. Don't mount them from here:
+      # logrotate skips rule files that aren't owned by root, and a mounted file
+      # keeps its owner on this machine, so power_manager.log would never rotate.
 
       # --- Custom Syslog Forwarding (optional) ---
       # To forward syslog messages to another server, copy
