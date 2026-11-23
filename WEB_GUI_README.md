@@ -103,6 +103,7 @@ All system configuration is now managed through a single file: `power_manager.co
       - `MAC`: MAC address for Wake-on-LAN
       - `BROADCAST_IP`: Optional specific broadcast IP
       - `SHUTDOWN_DELAY_MINUTES`: Optional - makes host a UPS client (use `0` for immediate shutdown)
+      - `SHUTDOWN_DELAY_SECONDS`: Optional - the exact delay when it isn't whole minutes; wins over the minutes (UPS script 4.6.0+)
       - `AUTO_WOL`: Optional - set to "false" to disable automatic WoL
 
   - **Schedule Definitions**: Each `[SCHEDULE_X]` section defines a one-time or recurring job to enable or disable the simulation mode.
@@ -263,9 +264,12 @@ curl -H "Authorization: Bearer <token>" "http://server:5000/config?ip=192.168.1.
 ```json
 {
   "SHUTDOWN_DELAY_MINUTES": "10",
+  "SHUTDOWN_DELAY_SECONDS": "600",
   "UPS_NAME": "ups@192.168.1.10"
 }
 ```
+
+`SHUTDOWN_DELAY_SECONDS` is read by UPS script 4.6.0 and later. For a delay that isn't whole minutes (say 30 seconds), `SHUTDOWN_DELAY_MINUTES` is rounded up (to 1) for older scripts.
 
 ## Migration from Previous Versions
 

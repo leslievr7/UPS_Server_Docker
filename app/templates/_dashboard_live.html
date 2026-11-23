@@ -19,7 +19,7 @@
   {% if m.countdown %}
   <div class="stack stack-sm">
     <div class="spread small">
-      <span class="muted">Shuts down in</span>
+      <span class="muted">Starts shutting down in</span>
       <span class="strong nums" data-deadline="{{ m.countdown.deadline }}">{{ '%02d:%02d' % (m.countdown.remaining // 60, m.countdown.remaining % 60) }}</span>
     </div>
     <div class="meter"><span data-meter data-deadline="{{ m.countdown.deadline }}" data-total="{{ m.countdown.total }}"
@@ -33,7 +33,7 @@
     {% if m.kind == 'client' %}
       <dt>UPS script</dt>
       <dd>{{ m.agent_text }}</dd>
-      <dt>Shuts down</dt><dd>{{ m.delay_text }}</dd>
+      <dt>Starts shutting down</dt><dd>{{ m.delay_text }}</dd>
       {% if m.ignores_test_mode %}<dt>Test mode</dt><dd>Ignored</dd>{% endif %}
     {% else %}
       <dt>In a power cut</dt><dd>Keeps running</dd>
@@ -116,7 +116,7 @@
 
   <section>
     <div class="section-title">
-      <h2>Turn off in a power cut</h2><span class="count">{{ view.clients | length }}</span>
+      <h2>Shut down in a power cut</h2><span class="count">{{ view.clients | length }}</span>
       {{ ui.info('tip-protected', "These machines are safely shut down in a power cut. Once the power is back, the server wakes the ones set to wake up, if they support WoL.") }}
     </div>
     {% if view.clients %}
@@ -134,7 +134,7 @@
   <section>
     <div class="section-title">
       <h2>Keep running</h2><span class="count">{{ view.others | length }}</span>
-      {{ ui.info('tip-others', "They aren't turned off in a power cut. They stay on until the power comes back or the UPS battery runs flat.") }}
+      {{ ui.info('tip-others', "They aren't shut down in a power cut. They stay on until the power comes back or the UPS battery runs flat.") }}
     </div>
     <div class="grid-auto" style="--min:17rem">
       {% for m in view.others %}{{ machine_card(m) }}{% endfor %}

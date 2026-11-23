@@ -205,7 +205,10 @@ def build_machines(wake_hosts, client_statuses, reach_hosts, power_state, stale_
         countdown = None
         if status['key'] == 'countdown':
             remaining = as_int(record.get('remaining_seconds'), 0) - int(age or 0)
-            total = as_int(record.get('shutdown_delay'), 0) * 60
+            # Scripts from 4.6.0 report the exact delay in seconds as well.
+            total = as_int(record.get('shutdown_delay_seconds'), None)
+            if total is None:
+                total = as_int(record.get('shutdown_delay'), 0) * 60
             countdown = {
                 'deadline': iso(now + timedelta(seconds=max(0, remaining))),
                 'total': total,
@@ -221,7 +224,7 @@ def build_machines(wake_hosts, client_statuses, reach_hosts, power_state, stale_
             # a ticking "x s ago" on every card is noise.
             agent_text = 'Reporting' if seen_age <= stale_seconds else f'Last heard {ago(seen_age)}'
 
-        delay = as_int(params.get('SHUTDOWN_DELAY_MINUTES'), None) if kind == 'client' else None
+        delay = machine_roles.delay_seconds(params) if kind == 'client' else None
         # Battery rules only matter for machines set to use them; for the rest
         # the verdict just repeats what the sentinels say.
         source = (params.get('POWER_SOURCE') or default_source or 'sentinel').strip().lower()
@@ -247,7 +250,8 @@ def build_machines(wake_hosts, client_statuses, reach_hosts, power_state, stale_
             'countdown': countdown,
             'agent_seen': agent_seen,
             'agent_text': agent_text,
-            'delay_text': None if delay is None else ('Immediately' if delay == 0 else f'After {delay} min'),
+            'delay_text': None if delay is None else ('Immediately' if delay == 0
+                                                      else 'After ' + machine_roles.delay_text(delay)),
             'auto_wol': auto_wol,
             'wol': machine_roles.wol_state(params.get('MAC'), record, machine_roles.no_wake_prefixes()),
             'ignores_test_mode': is_true(params.get('IGNORE_SIMULATION')),

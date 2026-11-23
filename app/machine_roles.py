@@ -1,7 +1,9 @@
 """What each machine does in a power cut, and what we know about its UPS script.
 
-A machine with SHUTDOWN_DELAY_MINUTES turns itself off that many minutes into
-a power cut. One without keeps running. UPS script 4.5.0 and later is told so
+A machine with SHUTDOWN_DELAY_MINUTES starts shutting down that many minutes
+into a power cut (SHUTDOWN_DELAY_SECONDS, when present, gives the exact delay
+in seconds; scripts before 4.6.0 only read the minutes). One without keeps
+running. UPS script 4.5.0 and later is told so
 directly (SHUTDOWN_ENABLED=false in /config) and never shuts down. Older
 scripts don't know that setting and need a delay, so they get the long-standing
 default of 5 minutes and still turn off: the settings page and dashboard warn
@@ -22,6 +24,10 @@ import re
 
 # Keep in step with UPS_monitor's SCRIPT_VERSION.
 KEEP_RUNNING_SINCE = (4, 5, 0)
+# First script that reads SHUTDOWN_DELAY_SECONDS.
+SECONDS_SINCE = (4, 6, 0)
+# The longest delay the settings page accepts: a day.
+MAX_DELAY_SECONDS = 24 * 60 * 60
 # What /config sends scripts too old to understand "keep running".
 OLD_SCRIPT_DELAY = '5'
 # Statuses the UPS script itself reports (wol_* ones are written by the server).
@@ -40,6 +46,45 @@ def turns_off(params):
     return (params or {}).get('SHUTDOWN_DELAY_MINUTES') not in (None, '')
 
 
+def delay_seconds(params):
+    """Seconds into a power cut before the machine starts shutting down.
+
+    SHUTDOWN_DELAY_SECONDS is only written for delays that aren't whole
+    minutes, and wins when present; otherwise it's SHUTDOWN_DELAY_MINUTES.
+    None for a machine that keeps running, or a delay that isn't a whole number.
+    """
+    params = params or {}
+    if not turns_off(params):
+        return None
+    seconds = str(params.get('SHUTDOWN_DELAY_SECONDS', '')).strip()
+    if seconds.isdigit():
+        return int(seconds)
+    minutes = str(params.get('SHUTDOWN_DELAY_MINUTES', '')).strip()
+    return int(minutes) * 60 if minutes.isdigit() else None
+
+
+def minutes_for_old_scripts(seconds):
+    """Scripts before 4.6.0 only take whole minutes, so round up: waiting a
+    little longer is better than shutting down on every short power cut."""
+    return str(-(-int(seconds) // 60))
+
+
+def delay_settings(seconds):
+    """What to write to a machine's settings for this delay (None = remove)."""
+    return {
+        'SHUTDOWN_DELAY_MINUTES': minutes_for_old_scripts(seconds),
+        'SHUTDOWN_DELAY_SECONDS': str(seconds) if seconds % 60 else None,
+    }
+
+
+def delay_text(seconds):
+    """30 -> '30 s', 120 -> '2 min', 90 -> '1 min 30 s'."""
+    minutes, rest = divmod(int(seconds), 60)
+    if not minutes:
+        return f'{rest} s'
+    return f'{minutes} min' + (f' {rest} s' if rest else '')
+
+
 def parse_version(text):
     """'4.5.0' -> (4, 5, 0); anything else -> None."""
     match = re.fullmatch(r'\s*(\d+)\.(\d+)(?:\.(\d+))?\s*', str(text or ''))
@@ -56,6 +101,11 @@ def has_reported(record):
 def understands_keep_running(record):
     version = parse_version((record or {}).get('client_version'))
     return version is not None and version >= KEEP_RUNNING_SINCE
+
+
+def understands_seconds(record):
+    version = parse_version((record or {}).get('client_version'))
+    return version is not None and version >= SECONDS_SINCE
 
 
 def old_script(params, record):
@@ -130,14 +180,24 @@ def machine_notes(wake_hosts, client_statuses, prefixes):
 
     old_script: set to keep running, but its script will still turn it off.
     script_too_old: its script couldn't keep it running, if it were set to.
+    no_seconds: its script only takes whole minutes (before 4.6.0).
+    rounded_delay: set to a delay that isn't whole minutes, which that older
+        script rounds up - e.g. '1 min' for 30 s. None otherwise.
     """
     notes = {}
     statuses = client_statuses if isinstance(client_statuses, dict) else {}
     for section, params in wake_hosts.items():
         record = statuses.get(params.get('IP', ''))
+        no_seconds = has_reported(record) and not understands_seconds(record)
+        seconds = delay_seconds(params)
+        rounded = (no_seconds and seconds is not None and seconds % 60 != 0)
         notes[section] = {
             'old_script': old_script(params, record),
             'script_too_old': has_reported(record) and not understands_keep_running(record),
+            'no_seconds': no_seconds,
+            'delay': (None if seconds is None
+                      else 'immediately' if seconds == 0 else 'after ' + delay_text(seconds)),
+            'rounded_delay': delay_text(int(minutes_for_old_scripts(seconds)) * 60) if rounded else None,
             'wol': wol_state(params.get('MAC'), record, prefixes),
             'no_script': turns_off(params) and not has_reported(record),
             'version': (record or {}).get('client_version') if has_reported(record) else None,

@@ -137,7 +137,7 @@
   <div role="tabpanel" id="panel-machines" aria-labelledby="tab-machines" tabindex="-1" hidden>
     <div class="stack">
       <div class="spread">
-        <p class="muted">Choose what each machine does in a power cut and when the power comes back. Machines that turn themselves off need the UPS script installed.</p>
+        <p class="muted">Choose what each machine does in a power cut and when the power comes back. Machines that shut down need the UPS script installed.</p>
         <button type="button" class="btn" data-host-add>{{ ui.icon('plus') }} Add a machine</button>
       </div>
 
@@ -155,13 +155,13 @@
             </div>
             <div class="cluster" style="--gap:0.375rem">
               {% if turns_off %}
-                {% set d = h.get('SHUTDOWN_DELAY_MINUTES') %}
-                {{ ui.badge('Turns off ' ~ ('immediately' if d == '0' else 'after ' ~ d ~ ' min'), 'info') }}
+                {{ ui.badge('Starts shutting down ' ~ (note.delay or 'after ' ~ h.get('SHUTDOWN_DELAY_MINUTES') ~ ' min'), 'info') }}
+                {% if note.rounded_delay %}{{ ui.badge('Older UPS script · waits ' ~ note.rounded_delay, 'warning', 'triangle-alert') }}{% endif %}
                 {% if h.get('IGNORE_SIMULATION') == 'true' %}{{ ui.badge('Ignores test mode', 'muted') }}{% endif %}
                 {% if note.no_script %}{{ ui.badge('UPS script not seen yet', 'warning', 'circle-alert') }}{% endif %}
               {% else %}
                 {{ ui.badge('Keeps running', 'muted') }}
-                {% if note.old_script %}{{ ui.badge('Older UPS script · still turns off after ' ~ old_script_delay ~ ' min', 'warning', 'triangle-alert') }}{% endif %}
+                {% if note.old_script %}{{ ui.badge('Older UPS script · still shuts down after ' ~ old_script_delay ~ ' min', 'warning', 'triangle-alert') }}{% endif %}
               {% endif %}
               {% if h.get('AUTO_WOL', 'true') == 'false' %}
                 {{ ui.badge("Isn't woken", 'muted') }}
@@ -248,7 +248,7 @@
         <section class="switch-list">
           {{ switch('notify_power_fail', 'A power cut is detected', checked=c.get('NOTIFY_POWER_FAIL') == 'true', autosave='NOTIFY_POWER_FAIL') }}
           {{ switch('notify_power_restored', 'The power comes back', checked=c.get('NOTIFY_POWER_RESTORED') == 'true', autosave='NOTIFY_POWER_RESTORED') }}
-          {{ switch('notify_client_shutdown', 'A machine starts turning off', checked=c.get('NOTIFY_CLIENT_SHUTDOWN') == 'true', autosave='NOTIFY_CLIENT_SHUTDOWN') }}
+          {{ switch('notify_client_shutdown', 'A machine starts shutting down', checked=c.get('NOTIFY_CLIENT_SHUTDOWN') == 'true', autosave='NOTIFY_CLIENT_SHUTDOWN') }}
           {{ switch('notify_wol_failure', "A machine doesn't wake up", checked=c.get('NOTIFY_WOL_FAILURE', 'true') == 'true', autosave='NOTIFY_WOL_FAILURE') }}
           {{ switch('notify_client_stale', "A machine's UPS script stops checking in", checked=c.get('NOTIFY_CLIENT_STALE') == 'true', autosave='NOTIFY_CLIENT_STALE') }}
           {{ switch('notify_simulation_mode', 'Test mode is turned on or off', checked=c.get('NOTIFY_SIMULATION_MODE') == 'true', autosave='NOTIFY_SIMULATION_MODE') }}
@@ -497,8 +497,8 @@
       <p>Machines will be told the power is back. Ones that turned themselves off will be woken as usual.</p>
       {% else %}
       <p>Every machine will be told the power is out.
-        {% if test_mode_acting %}These will <strong>turn themselves off</strong>: {{ test_mode_acting | join(', ') }}.
-        {% else %}None of your machines are set to turn off in test mode.{% endif %}</p>
+        {% if test_mode_acting %}These will <strong>shut down</strong>: {{ test_mode_acting | join(', ') }}.
+        {% else %}None of your machines are set to shut down in test mode.{% endif %}</p>
       {% endif %}
     </header>
     <footer>
@@ -538,17 +538,24 @@
         <div class="field">
           <label for="host-power-cut-trigger">In a power cut</label>
           <div class="inline-choice">
-            {{ ui.select('power_cut', [('shutdown', 'Turn itself off'), ('keep', 'Keep running')], 'shutdown', id='host-power-cut') }}
-            <span class="input-unit" data-shutdown-only>
-              <span>after</span>
-              <input class="input" type="number" id="host-delay" name="shutdown_delay" min="0" max="1440" value="0"
-                     aria-label="Minutes before it turns itself off">
-              <span>min</span>
-            </span>
+            {{ ui.select('power_cut', [('shutdown', 'Shut down'), ('keep', 'Keep running')], 'shutdown', id='host-power-cut') }}
           </div>
           <p id="host-power-cut-help"></p>
-          <p class="field-warning" id="host-old-script" hidden>{{ ui.icon('triangle-alert') }}<span>Its UPS script is too old to keep running. Until you update the script on this machine, it will still turn itself off {{ old_script_delay }} minutes into a power cut.</span></p>
+          <p class="field-warning" id="host-old-script" hidden>{{ ui.icon('triangle-alert') }}<span>Its UPS script is too old to keep running. Until you update the script on this machine, it will still start shutting down {{ old_script_delay }} minutes into a power cut.</span></p>
         </div>
+        <fieldset class="field" data-shutdown-only>
+          <legend>Start shutting down</legend>
+          <label class="checkbox-line"><input type="radio" class="input" name="start" value="now" id="host-start-now"> Immediately</label>
+          <label class="checkbox-line delay-after">
+            <input type="radio" class="input" name="start" value="after" id="host-start-after">
+            <span>After</span>
+            <input class="input" type="number" id="host-delay" name="shutdown_delay" min="1" max="1440" value="1"
+                   aria-label="Delay before it starts shutting down">
+            {{ ui.select('delay_unit', [('seconds', 'seconds'), ('minutes', 'minutes')], 'minutes', id='host-delay-unit') }}
+          </label>
+          <p id="host-delay-help">Its UPS script checks every 15 seconds, so it starts within 15 seconds of this.</p>
+          <p class="field-warning" id="host-delay-rounded" hidden>{{ ui.icon('triangle-alert') }}<span></span></p>
+        </fieldset>
         <div class="field">
           <label for="host-when-back-trigger">When the power comes back</label>
           <div class="inline-choice">
@@ -558,7 +565,7 @@
           <p class="field-warning" id="host-no-wake" hidden>{{ ui.icon('triangle-alert') }}<span></span></p>
         </div>
         <div data-shutdown-only>
-          {{ switch('join_test_mode', 'Turn off during test mode', 'Rehearse with it when test mode is on.', id='host-test') }}
+          {{ switch('join_test_mode', 'Shut down during test mode', 'Rehearse with it when test mode is on.', id='host-test') }}
         </div>
         <details class="advanced">
           <summary>Advanced</summary>
@@ -708,7 +715,7 @@
   var whenBack = document.getElementById('host-when-back');
   var hostMac = document.getElementById('host-mac');
   var powerCutHelp = {
-    shutdown: 'Its UPS script shuts it down safely before the battery runs out. 0 minutes means straight away.',
+    shutdown: 'Its UPS script shuts it down safely before the battery runs out.',
     keep: 'It stays on until the power comes back or the battery runs flat.'
   };
   var whenBackHelp = {
@@ -733,6 +740,26 @@
     return null;
   }
   var hostSection = null;
+  var delayUnit = document.getElementById('host-delay-unit');
+  /* Same wording as machine_roles.delay_text. */
+  function delayText(seconds) {
+    var m = Math.floor(seconds / 60), s = seconds % 60;
+    return m ? m + ' min' + (s ? ' ' + s + ' s' : '') : s + ' s';
+  }
+  function syncDelay(active, note) {
+    var input = document.getElementById('host-delay');
+    var seconds = uiChoice(delayUnit) === 'seconds';
+    input.max = seconds ? 86400 : 1440;
+    var value = parseInt(input.value, 10) || 0;
+    /* Scripts before 4.6.0 only take whole minutes and round up (api.py). */
+    var rounded = active && note.no_seconds && seconds && value % 60 !== 0;
+    var warning = document.getElementById('host-delay-rounded');
+    warning.hidden = !rounded;
+    warning.querySelector('span').textContent = rounded
+      ? 'Its UPS script (' + (note.version || 'an older version') + ') only takes whole minutes, so it will wait ' +
+        delayText(Math.ceil(value / 60) * 60) + '. Update the script on this machine to use seconds.'
+      : '';
+  }
   function macPrefix(value) { return (value || '').replace(/[^0-9a-f]/gi, '').slice(0, 6).toUpperCase(); }
   function syncHostChoices() {
     var off = uiChoice(powerCut) === 'shutdown';
@@ -741,10 +768,13 @@
     document.getElementById('host-when-back-help').textContent = whenBackHelp[wake ? 'wake' : 'leave'];
     hostForm.querySelectorAll('[data-shutdown-only]').forEach(function (el) { el.hidden = !off; });
     /* A disabled field isn't sent, so a machine that keeps running saves no delay. */
+    /* The delay stays editable under "Immediately"; the server ignores it then. */
+    var after = document.getElementById('host-start-after').checked;
     document.getElementById('host-delay').disabled = !off;
     document.getElementById('host-test').disabled = !off;
     var note = (hostSection && machineNotes[hostSection]) || {};
     document.getElementById('host-old-script').hidden = off || !note.script_too_old;
+    syncDelay(off && after, note);
     var ip = document.getElementById('host-ip').value.trim();
     var wol = wolState(ip, hostMac.value);
     var noWake = document.getElementById('host-no-wake');
@@ -752,7 +782,17 @@
     noWake.querySelector('span').textContent = wol ? wolWarnings[wol] : '';
     document.getElementById('host-sentinel').hidden = sentinelIps.indexOf(ip) === -1;
   }
-  [powerCut, whenBack].forEach(function (el) { el.addEventListener('change', syncHostChoices); });
+  [powerCut, whenBack, delayUnit].forEach(function (el) { el.addEventListener('change', syncHostChoices); });
+  ['host-start-now', 'host-start-after', 'host-delay'].forEach(function (id) {
+    document.getElementById(id).addEventListener('input', syncHostChoices);
+  });
+  /* Changing the delay or its unit picks "After". */
+  function pickAfter() {
+    document.getElementById('host-start-after').checked = true;
+    syncHostChoices();
+  }
+  document.getElementById('host-delay').addEventListener('focus', pickAfter);
+  delayUnit.addEventListener('change', pickAfter);
   var hostFields = { NAME: 'host-name', IP: 'host-ip', MAC: 'host-mac', BROADCAST_IP: 'host-broadcast',
     SHUTDOWN_SOC: 'host-shutdown-soc', WOL_MIN_SOC: 'host-wol-min-soc', SHUTDOWN_VOLTAGE: 'host-shutdown-voltage',
     CRITICAL_VOLTAGE: 'host-critical-voltage', MIN_RUNTIME_MINUTES: 'host-min-runtime' };
@@ -768,7 +808,13 @@
     var delay = h.SHUTDOWN_DELAY_MINUTES;
     var off = section ? (delay !== undefined && delay !== '') : true;
     uiChoice(powerCut, off ? 'shutdown' : 'keep');
-    document.getElementById('host-delay').value = delay || '0';
+    /* Same rule as machine_roles.delay_seconds. */
+    var seconds = /^\d+$/.test(h.SHUTDOWN_DELAY_SECONDS || '') ? parseInt(h.SHUTDOWN_DELAY_SECONDS, 10)
+      : (/^\d+$/.test(delay || '') ? parseInt(delay, 10) * 60 : 0);
+    var inSeconds = seconds % 60 !== 0;
+    document.getElementById(seconds > 0 ? 'host-start-after' : 'host-start-now').checked = true;
+    uiChoice(delayUnit, inSeconds ? 'seconds' : 'minutes');
+    document.getElementById('host-delay').value = seconds > 0 ? (inSeconds ? seconds : seconds / 60) : 1;
     /* A machine switched over from "keep running" joins test mode by default. */
     document.getElementById('host-test').checked = !off || h.IGNORE_SIMULATION !== 'true';
     uiChoice(whenBack, (h.AUTO_WOL || 'true') !== 'false' ? 'wake' : 'leave');

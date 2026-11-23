@@ -219,6 +219,9 @@ BATTERY_SIM_REMAINING=""
 # MAC - The MAC address of the host (use colons as separators)
 # BROADCAST_IP - (Optional) Specific broadcast IP for this host
 # SHUTDOWN_DELAY_MINUTES - (Optional) Makes host a UPS client. Use 0 for immediate shutdown.
+# SHUTDOWN_DELAY_SECONDS - (Optional) The exact delay, for delays that aren't whole
+#   minutes; it wins over SHUTDOWN_DELAY_MINUTES. The settings page writes both, with
+#   the minutes rounded up for UPS scripts older than 4.6.0.
 #
 # Battery monitor settings (all optional, only used when BATTERY_ENABLED=true):
 # POWER_SOURCE - Which source decides this host's power state:

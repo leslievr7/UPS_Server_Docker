@@ -477,6 +477,11 @@ label.pick-row:has(input:checked) { background: color-mix(in oklab, var(--primar
 .switch-list > .setting-switch:last-child { padding-bottom: 0; }
 .checkbox-line { display: inline-flex; align-items: center; gap: 0.5rem; font-weight: 400; cursor: pointer; }
 fieldset { border: 0; margin: 0; padding: 0; min-width: 0; }
+/* "( ) After [ 30 ] [seconds v]" in the machine pop-up. */
+.delay-after { flex-direction: row !important; flex-wrap: wrap; align-items: center; }
+.delay-after > .input[type="number"] { max-width: 5.5rem; }
+.delay-after .select:not(select) { width: auto; }
+.delay-after .select:not(select) > button { min-width: 7.5rem; }
 legend { font-weight: 500; font-size: 0.875rem; margin-bottom: 0.5rem; padding: 0; }
 .battery-fields { padding-top: 1rem; border-top: 1px solid var(--border); }
 

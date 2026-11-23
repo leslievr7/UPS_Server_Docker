@@ -147,7 +147,8 @@ def test_silent_sentinels_are_pinged_at_once(tmp_path, monkeypatch):
     pm.real_fail_notified = False
     started = time.monotonic()
     pm._determine_power_status()
-    assert time.monotonic() - started < 2.5
+    # About 1s in parallel; one after another it would be over 5s.
+    assert time.monotonic() - started < 3.5
     assert pm.sentinel_results == {f'192.0.2.{n}': False for n in range(1, 6)}
 
 

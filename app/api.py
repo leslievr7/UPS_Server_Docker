@@ -491,7 +491,15 @@ def get_config():
         if keep_running:
             response_config['SHUTDOWN_DELAY_MINUTES'] = machine_roles.OLD_SCRIPT_DELAY
         else:
-            response_config['SHUTDOWN_DELAY_MINUTES'] = client_config.get('SHUTDOWN_DELAY_MINUTES')
+            # UPS_monitor 4.6.0+ prefers SHUTDOWN_DELAY_SECONDS (additive).
+            # Older scripts read only whole minutes, so a 30-second delay
+            # reaches them as 1 minute.
+            seconds = machine_roles.delay_seconds(client_config)
+            if seconds is None:
+                response_config['SHUTDOWN_DELAY_MINUTES'] = client_config.get('SHUTDOWN_DELAY_MINUTES')
+            else:
+                response_config['SHUTDOWN_DELAY_MINUTES'] = machine_roles.minutes_for_old_scripts(seconds)
+                response_config['SHUTDOWN_DELAY_SECONDS'] = str(seconds)
         
         # Generate UPS_NAME
         ups_name = get_ups_name()
@@ -541,6 +549,10 @@ def update_client_status():
     wol = data.get('wol')
     if wol in machine_roles.WOL_REPORTS:
         client_status['wol'] = wol
+    # ...and, from 4.6.0, its exact delay in seconds (shutdown_delay stays minutes).
+    delay_seconds = data.get('shutdown_delay_seconds')
+    if isinstance(delay_seconds, int) and not isinstance(delay_seconds, bool) and delay_seconds >= 0:
+        client_status['shutdown_delay_seconds'] = delay_seconds
 
     # Several API workers (and the power manager) can write at the same moment;
     # client_status takes care of taking turns.

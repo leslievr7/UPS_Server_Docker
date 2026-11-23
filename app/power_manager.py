@@ -1146,9 +1146,11 @@ class PowerManager:
             name = params.get('NAME', section)
             source = self.evaluator.host_source(params)
             if source == 'sentinel':
-                lines.append(
-                    f"- {name}: after {params.get('SHUTDOWN_DELAY_MINUTES')} min (timer)"
-                )
+                seconds = machine_roles.delay_seconds(params)
+                when = (f"after {params.get('SHUTDOWN_DELAY_MINUTES')} min" if seconds is None
+                        else 'immediately' if seconds == 0
+                        else f"after {machine_roles.delay_text(seconds)}")
+                lines.append(f"- {name}: {when} (timer)")
             else:
                 soc = self.evaluator.threshold(params, 'SHUTDOWN_SOC')
                 voltage = self.evaluator.threshold(params, 'SHUTDOWN_VOLTAGE')

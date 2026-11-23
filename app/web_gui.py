@@ -447,25 +447,49 @@ def apply_battery_host_fields(host):
         else:
             host.pop(key, None)
 
+DELAY_ERROR = 'The delay must be a whole number, up to 1440 minutes.'
+
+
 def read_machine_choices(form):
     """The machine pop-up's answers, as settings values.
 
-    Returns (shutdown_delay, ignore_simulation, auto_wol, error). An empty
-    shutdown_delay means "keep running in a power cut". Forms that send the
-    raw fields instead (older pages, tests) are still understood.
+    Returns (delay_seconds, ignore_simulation, auto_wol, error). A delay of
+    None means "keep running in a power cut". Forms that send the raw fields
+    instead (older pages, tests: shutdown_delay in minutes) are still understood.
     """
     if 'power_cut' not in form:
-        return (form.get('shutdown_delay', '').strip(),
+        raw = form.get('shutdown_delay', '').strip()
+        if raw and not raw.isdigit():
+            return None, None, None, DELAY_ERROR
+        return (int(raw) * 60 if raw else None,
                 'true' if 'ignore_simulation' in form else 'false',
                 'true' if 'auto_wol' in form else 'false', None)
     auto_wol = 'false' if form.get('when_back') == 'leave' else 'true'
     if form.get('power_cut') != 'shutdown':
         # Keeping running in a real power cut means sitting out test mode too.
-        return '', 'true', auto_wol, None
-    delay = form.get('shutdown_delay', '').strip() or '0'
-    if not delay.isdigit() or int(delay) > 1440:
-        return None, None, None, 'Turn off after must be a whole number of minutes.'
-    return str(int(delay)), ('false' if 'join_test_mode' in form else 'true'), auto_wol, None
+        return None, 'true', auto_wol, None
+    if form.get('start') == 'now':
+        seconds = 0
+    else:
+        raw = form.get('shutdown_delay', '').strip() or '0'
+        unit = 60 if form.get('delay_unit', 'minutes') == 'minutes' else 1
+        if not raw.isdigit() or int(raw) * unit > machine_roles.MAX_DELAY_SECONDS:
+            return None, None, None, DELAY_ERROR
+        seconds = int(raw) * unit
+    return seconds, ('false' if 'join_test_mode' in form else 'true'), auto_wol, None
+
+
+def apply_delay(host, seconds):
+    """Write a machine's delay to its settings; None means it keeps running."""
+    if seconds is None:
+        host.pop('SHUTDOWN_DELAY_MINUTES', None)
+        host.pop('SHUTDOWN_DELAY_SECONDS', None)
+        return
+    for key, value in machine_roles.delay_settings(seconds).items():
+        if value is None:
+            host.pop(key, None)
+        else:
+            host[key] = value
 
 
 @app.route('/add_wake_host', methods=['POST'])
@@ -506,8 +530,7 @@ def add_wake_host():
         wake_hosts[section_name] = {'NAME': name, 'IP': ip, 'MAC': mac, 'AUTO_WOL': auto_wol, 'IGNORE_SIMULATION': ignore_simulation}
         if broadcast_ip:
             wake_hosts[section_name]['BROADCAST_IP'] = broadcast_ip
-        if shutdown_delay:
-            wake_hosts[section_name]['SHUTDOWN_DELAY_MINUTES'] = shutdown_delay
+        apply_delay(wake_hosts[section_name], shutdown_delay)
         apply_battery_host_fields(wake_hosts[section_name])
 
         write_power_manager_config(pm_config, wake_hosts, schedules)
@@ -563,10 +586,7 @@ def edit_wake_host(section):
         elif 'BROADCAST_IP' in wake_hosts[section]:
             del wake_hosts[section]['BROADCAST_IP']
 
-        if shutdown_delay:
-            wake_hosts[section]['SHUTDOWN_DELAY_MINUTES'] = shutdown_delay
-        elif 'SHUTDOWN_DELAY_MINUTES' in wake_hosts[section]:
-            del wake_hosts[section]['SHUTDOWN_DELAY_MINUTES']
+        apply_delay(wake_hosts[section], shutdown_delay)
 
         apply_battery_host_fields(wake_hosts[section])
 

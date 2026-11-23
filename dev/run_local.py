@@ -343,7 +343,7 @@ def api_call(method, path, payload=None):
 
 
 def agent_pass(ip, m):
-    """One check of a pretend agent, mirroring ups_monitor.sh v4.5.0 (or 4.4.0 when old)."""
+    """One check of a pretend agent, mirroring ups_monitor.sh v4.6.0 (or 4.4.0 when old)."""
     now = time.time()
     if now >= m['next_config_at'] or m['config'] is None:
         try:
@@ -353,6 +353,9 @@ def agent_pass(ip, m):
         m['next_config_at'] = now + 60
 
     delay = int(m['config'].get('SHUTDOWN_DELAY_MINUTES', 5)) * 60
+    # 4.6.0 prefers the exact delay in seconds.
+    if not m['old_script'] and str(m['config'].get('SHUTDOWN_DELAY_SECONDS', '')).isdigit():
+        delay = int(m['config']['SHUTDOWN_DELAY_SECONDS'])
     ignore = bool(m['config'].get('IGNORE_SIMULATION'))
     # Scripts before 4.5.0 don't know SHUTDOWN_ENABLED.
     keep_running = not m['old_script'] and m['config'].get('SHUTDOWN_ENABLED') is False
@@ -365,7 +368,9 @@ def agent_pass(ip, m):
         payload = {'ip': ip, 'status': state, 'remaining_seconds': remaining,
                    'shutdown_delay': delay_min}
         if not m['old_script']:
-            payload['client_version'] = '4.5.0'
+            payload['client_version'] = '4.6.0'
+            if state == 'shutdown_pending':
+                payload['shutdown_delay_seconds'] = delay
             if m.get('wol'):
                 payload['wol'] = m['wol']
         api_call('POST', '/status', payload)
@@ -387,10 +392,10 @@ def agent_pass(ip, m):
             WORLD.log(f"{m['name']}: agent shutting the machine down")
         elif not m['flag_since']:
             m['flag_since'] = now
-            report('shutdown_pending', delay, delay // 60)
-            WORLD.log(f"{m['name']}: agent started a {delay // 60} min shutdown countdown")
+            report('shutdown_pending', delay, -(-delay // 60))
+            WORLD.log(f"{m['name']}: agent started a {delay} s shutdown countdown")
         else:
-            report('shutdown_pending', int(delay - (now - m['flag_since'])), delay // 60)
+            report('shutdown_pending', int(delay - (now - m['flag_since'])), -(-delay // 60))
     elif current == 'OL':
         m['keep_logged'] = False
         if m['flag_since']:
@@ -554,7 +559,7 @@ def register_dev_routes(web_app, power_manager):
                 elif name == 'script':
                     m['old_script'] = not m['old_script']
                     m['next_config_at'] = 0
-                    WORLD.log(f"{m['name']}: agent is now version {'4.4.0' if m['old_script'] else '4.5.0'}")
+                    WORLD.log(f"{m['name']}: agent is now version {'4.4.0' if m['old_script'] else '4.6.0'}")
                 else:
                     m['wakes'] = not m['wakes']
                     WORLD.log(f"{m['name']}: {'responds to' if m['wakes'] else 'ignores'} Wake-on-LAN")
@@ -607,7 +612,7 @@ async function refresh(){const s=await (await fetch('/dev/state')).json();
  document.getElementById('summary').innerHTML=`Grid: ${pill(s.grid_on,'on','OFF')} &nbsp; Test mode: ${pill(!s.test_mode,'off','ON')} &nbsp; Power manager: <b>${s.manager_state}</b> &nbsp; UPS says: <b>${s.ups_status}</b>`;
  const b=s.battery;document.getElementById('battery').innerHTML=s.battery_enabled?`SoC <b>${b.soc.toFixed(1)}%</b> &middot; ${b.voltage.toFixed(2)} V &middot; ${b.current.toFixed(1)} A`:'Battery monitor is disabled in the sandbox settings.';
  document.getElementById('machines').innerHTML=Object.entries(s.machines).map(([ip,m])=>`<tr><td>${m.name}${m.ups_client?'':' <span class=pill>WoL only</span>'}</td><td>${ip}</td>
- <td>${pill(m.on,'on','off',m.boot_at?'booting':m.off_at?'shutting down':'')}</td><td>${pill(m.agent,'running '+(m.old_script?'4.4.0':'4.5.0'),'none')}</td><td>${pill(m.wakes,'works','ignored')} <span class=pill>reports ${m.wol||'nothing'}</span></td>
+ <td>${pill(m.on,'on','off',m.boot_at?'booting':m.off_at?'shutting down':'')}</td><td>${pill(m.agent,'running '+(m.old_script?'4.4.0':'4.6.0'),'none')}</td><td>${pill(m.wakes,'works','ignored')} <span class=pill>reports ${m.wol||'nothing'}</span></td>
  <td><button onclick="act('power','${ip}')">Power</button><button onclick="act('agent','${ip}')">Agent</button><button onclick="act('script','${ip}')">Old/new script</button><button onclick="act('wakes','${ip}')">WoL fault</button><button onclick="act('wol','${ip}')">WoL report</button></td></tr>`).join('');
  document.getElementById('events').textContent=s.events.join('\\n')||'Nothing yet.';
  document.getElementById('emails').textContent=s.emails.map(e=>`${e.time}  ${e.subject}\\n${e.body}\\n`).join('\\n')||'None yet.';}

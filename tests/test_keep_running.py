@@ -132,19 +132,20 @@ def choices(**fields):
 
 
 def test_keep_running_saves_no_delay_and_sits_out_test_mode():
-    assert choices(power_cut='keep', when_back='wake', shutdown_delay='7') == ('', 'true', 'true', None)
+    assert choices(power_cut='keep', when_back='wake', shutdown_delay='7') == (None, 'true', 'true', None)
 
 
 def test_turn_off_answers():
+    # Delays come back in seconds; the unit defaults to minutes.
     assert choices(power_cut='shutdown', shutdown_delay='7', join_test_mode='true',
-                   when_back='leave') == ('7', 'false', 'false', None)
-    assert choices(power_cut='shutdown', shutdown_delay='', when_back='wake') == ('0', 'true', 'true', None)
+                   when_back='leave') == (420, 'false', 'false', None)
+    assert choices(power_cut='shutdown', shutdown_delay='', when_back='wake') == (0, 'true', 'true', None)
     assert choices(power_cut='shutdown', shutdown_delay='soon')[3]
 
 
 def test_older_forms_still_work():
-    assert choices(shutdown_delay='3', auto_wol='true') == ('3', 'false', 'true', None)
-    assert choices() == ('', 'false', 'false', None)
+    assert choices(shutdown_delay='3', auto_wol='true') == (180, 'false', 'true', None)
+    assert choices() == (None, 'false', 'false', None)
 
 
 def test_saving_keep_running_from_the_pop_up(env):
@@ -179,9 +180,9 @@ def test_settings_page_warns_about_old_scripts_and_pis(env, tmp_path, monkeypatc
         f.write('\n[WAKE_HOST_2]\nNAME="Pi NAS"\nIP="192.0.2.30"\nMAC="DC:A6:32:00:00:30"\nAUTO_WOL="true"\n')
     html = signed_in(env).get('/config').get_data(as_text=True)
     assert 'Keeps running' in html
-    assert 'Older UPS script · still turns off after 5 min' in html
+    assert 'Older UPS script · still shuts down after 5 min' in html
     assert 'WoL support unsure' in html
-    assert 'Turns off immediately' in html
+    assert 'Starts shutting down immediately' in html
 
 
 def test_settings_use_shadcn_style_dropdowns(env):
