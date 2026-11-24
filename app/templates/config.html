@@ -553,7 +553,7 @@
                    aria-label="Delay before it starts shutting down">
             {{ ui.select('delay_unit', [('seconds', 'seconds'), ('minutes', 'minutes')], 'minutes', id='host-delay-unit') }}
           </label>
-          <p id="host-delay-help">Its UPS script checks every 15 seconds, so it starts within 15 seconds of this.</p>
+          <p id="host-delay-help">Its UPS script checks every 10 seconds (every 15 before version 4.6.0), so it starts within that time after the delay ends.</p>
           <p class="field-warning" id="host-delay-rounded" hidden>{{ ui.icon('triangle-alert') }}<span></span></p>
         </fieldset>
         <div class="field">
